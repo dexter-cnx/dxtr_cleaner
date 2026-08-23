@@ -3,7 +3,8 @@ use std::{env, path::PathBuf, process::ExitCode};
 use cleaner_core::{
     ApplicationInventory, ApplicationProtectionPolicy, CategoryScanTarget, CleanupCategory,
     FileSystemScanner, HomebrewScan, NodeScan, OrphanFinder, Planner, RelatedFileMatcher,
-    ScanSummary, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
+    ScanSummary, Scanner, SystemCacheScan, UninstallPlan, UninstallPlanItemKind, UserCacheScan,
+    XcodeScan,
 };
 use cleaner_macos::SystemMacPlatform;
 
@@ -14,6 +15,7 @@ fn main() -> ExitCode {
         Some("apps") => run_app_inventory(),
         Some("related") => run_related_files(&args),
         Some("orphans") => run_orphan_finder(),
+        Some("uninstall-plan") => run_uninstall_plan(&args),
         _ => {
             print_usage();
             ExitCode::SUCCESS
@@ -193,6 +195,78 @@ fn run_orphan_finder() -> ExitCode {
     }
 }
 
+fn run_uninstall_plan(args: &[String]) -> ExitCode {
+    let Some(bundle_identifier) = args.get(1) else {
+        eprintln!("uninstall-plan requires a bundle identifier");
+        print_usage();
+        return ExitCode::FAILURE;
+    };
+
+    let platform = SystemMacPlatform;
+    let inventory = platform.inventory();
+    if !inventory.issues.is_empty() {
+        for issue in &inventory.issues {
+            eprintln!(
+                "inventory warning: {}: {}",
+                issue.path.display(),
+                issue.message
+            );
+        }
+        eprintln!("cannot build uninstall plan from incomplete application inventory");
+        return ExitCode::FAILURE;
+    }
+
+    let matches: Vec<_> = inventory
+        .applications
+        .iter()
+        .filter(|application| {
+            application.metadata.bundle_identifier.as_deref() == Some(bundle_identifier.as_str())
+        })
+        .collect();
+
+    let application = match matches.as_slice() {
+        [] => {
+            eprintln!("no installed application found for bundle identifier: {bundle_identifier}");
+            return ExitCode::FAILURE;
+        }
+        [application] => (*application).clone(),
+        _ => {
+            eprintln!(
+                "multiple installed applications found for bundle identifier: {bundle_identifier}; select by path in a future review surface"
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let related = platform.related_files(&application);
+    let plan = UninstallPlan::build(application, related);
+
+    println!(
+        "application\t{}\t{}\tprotected={}",
+        plan.application.name,
+        plan.application.path.display(),
+        plan.is_protected()
+    );
+    for item in &plan.items {
+        let kind = match item.kind {
+            UninstallPlanItemKind::ApplicationBundle => "application",
+            UninstallPlanItemKind::RelatedFile(kind) => kind.label(),
+        };
+        println!(
+            "{}\t{}\t{}\tselected={}\tselectable={}\treview_only={}",
+            item.confidence.label(),
+            kind,
+            item.path.display(),
+            item.selected,
+            item.selectable,
+            item.review_only
+        );
+    }
+    println!("selected items: {}", plan.selected_count());
+    println!("mode: review-only; no filesystem mutation");
+    ExitCode::SUCCESS
+}
+
 fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
     let Some(index) = args.iter().position(|arg| arg == "--category") else {
         return Ok(CleanupCategory::UserCache);
@@ -246,6 +320,7 @@ fn print_usage() {
     println!("dxtr-cleaner apps");
     println!("dxtr-cleaner related <bundle-id>");
     println!("dxtr-cleaner orphans");
+    println!("dxtr-cleaner uninstall-plan <bundle-id>");
 }
 
 #[cfg(test)]
