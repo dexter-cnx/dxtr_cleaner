@@ -27,8 +27,8 @@
 - [x] cleanup plan review UI
 - [ ] move-to-trash where appropriate
 - [ ] permanent-delete policy by category
-- [ ] symlink-safe canonicalization and revalidation
-- [ ] allow-list enforcement
+- [x] symlink-safe canonicalization and revalidation
+- [x] allow-list enforcement
 - [ ] execution report
 - [ ] cancellation
 
