@@ -61,10 +61,26 @@ fn run_app_inventory() -> ExitCode {
 
     for application in &report.applications {
         println!(
-            "{}\t{}\t{}",
+            "{}\t{}\t{}\tbundle={}\tversion={}\tbuild={}\tteam={}",
             application.location.label(),
             application.name,
-            application.path.display()
+            application.path.display(),
+            application
+                .metadata
+                .bundle_identifier
+                .as_deref()
+                .unwrap_or("-"),
+            application.metadata.short_version.as_deref().unwrap_or("-"),
+            application
+                .metadata
+                .bundle_version
+                .as_deref()
+                .unwrap_or("-"),
+            application
+                .metadata
+                .team_identifier
+                .as_deref()
+                .unwrap_or("-")
         );
     }
     for issue in &report.issues {

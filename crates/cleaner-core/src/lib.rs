@@ -12,7 +12,7 @@ pub use action_policy::{
 };
 pub use app_inventory::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
-    ApplicationLocation, InstalledApplication,
+    ApplicationLocation, ApplicationMetadata, InstalledApplication,
 };
 pub use executor::{
     CleanupBackend, CleanupExecutor, ExecutionFailure, ExecutionRecord, ExecutionReport,

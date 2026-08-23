@@ -1,8 +1,11 @@
+mod app_metadata;
+
 use std::{
     fs,
     path::{Path, PathBuf},
 };
 
+use app_metadata::extract_application_metadata;
 use cleaner_core::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
     ApplicationLocation, InstalledApplication, PermanentDeleteBackend, TrashBackend,
@@ -201,9 +204,10 @@ fn collect_applications(
                 .file_stem()
                 .map(|value| value.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            let metadata = extract_application_metadata(&path);
             report
                 .applications
-                .push(InstalledApplication::new(path, name, location));
+                .push(InstalledApplication::new(path, name, location).with_metadata(metadata));
         } else {
             collect_applications(&path, location, false, report);
         }
@@ -302,6 +306,37 @@ mod tests {
         assert_eq!(report.applications[0].path, root.join("Direct.app"));
         assert_eq!(report.applications[1].path, utilities.join("Tool.app"));
         assert!(report.issues.is_empty());
+
+        fs::remove_dir_all(root).expect("temp root must be removed");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn inventory_extracts_info_plist_metadata() {
+        let root = temp_root("inventory-metadata");
+        let app = root.join("Example.app");
+        fs::create_dir_all(app.join("Contents")).expect("app fixture must be created");
+        fs::write(
+            app.join("Contents/Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.example.cleaner-fixture</string>
+<key>CFBundleVersion</key><string>42</string>
+<key>CFBundleShortVersionString</key><string>1.2.3</string>
+</dict></plist>"#,
+        )
+        .expect("Info.plist fixture must be written");
+
+        let report = inventory_roots(&[(ApplicationLocation::Local, root.clone())]);
+        let metadata = &report.applications[0].metadata;
+
+        assert_eq!(
+            metadata.bundle_identifier.as_deref(),
+            Some("com.example.cleaner-fixture")
+        );
+        assert_eq!(metadata.bundle_version.as_deref(), Some("42"));
+        assert_eq!(metadata.short_version.as_deref(), Some("1.2.3"));
 
         fs::remove_dir_all(root).expect("temp root must be removed");
     }
