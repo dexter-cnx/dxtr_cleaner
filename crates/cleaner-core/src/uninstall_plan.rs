@@ -196,19 +196,13 @@ mod tests {
         }));
         assert!(!plan.set_selected(Path::new("/Applications/Example.app"), false));
         assert!(plan.items().iter().any(|item| {
-            item.path() == Path::new("/tmp/high")
-                && item.is_selected()
-                && !item.is_review_only()
+            item.path() == Path::new("/tmp/high") && item.is_selected() && !item.is_review_only()
         }));
         assert!(plan.items().iter().any(|item| {
-            item.path() == Path::new("/tmp/medium")
-                && !item.is_selected()
-                && item.is_review_only()
+            item.path() == Path::new("/tmp/medium") && !item.is_selected() && item.is_review_only()
         }));
         assert!(plan.items().iter().any(|item| {
-            item.path() == Path::new("/tmp/low")
-                && !item.is_selected()
-                && item.is_review_only()
+            item.path() == Path::new("/tmp/low") && !item.is_selected() && item.is_review_only()
         }));
     }
 
@@ -242,9 +236,7 @@ mod tests {
 
         assert!(plan.set_selected(Path::new("/tmp/medium"), true));
         assert!(plan.items().iter().any(|item| {
-            item.path() == Path::new("/tmp/medium")
-                && item.is_selected()
-                && item.is_review_only()
+            item.path() == Path::new("/tmp/medium") && item.is_selected() && item.is_review_only()
         }));
     }
 }
