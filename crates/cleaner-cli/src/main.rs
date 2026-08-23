@@ -71,13 +71,18 @@ fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
 }
 
 fn scan_request(category: CleanupCategory) -> Result<cleaner_core::ScanRequest, String> {
+    scan_request_with_home(category, env::var_os("HOME").map(PathBuf::from))
+}
+
+fn scan_request_with_home(
+    category: CleanupCategory,
+    home: Option<PathBuf>,
+) -> Result<cleaner_core::ScanRequest, String> {
     if category == CleanupCategory::SystemCache {
         return Ok(SystemCacheScan.request());
     }
 
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| "HOME is not set".to_string())?;
+    let home = home.ok_or_else(|| "HOME is not set".to_string())?;
 
     match category {
         CleanupCategory::UserCache => Ok(UserCacheScan::new(home).request()),
@@ -102,8 +107,17 @@ mod tests {
 
     #[test]
     fn system_scan_request_does_not_require_home() {
-        let request = scan_request(CleanupCategory::SystemCache).expect("system request");
+        let request = scan_request_with_home(CleanupCategory::SystemCache, None)
+            .expect("system request must not require HOME");
         assert_eq!(request.category, CleanupCategory::SystemCache);
         assert_eq!(request.roots, vec![PathBuf::from("/Library/Caches")]);
+    }
+
+    #[test]
+    fn user_relative_scan_still_requires_home() {
+        assert_eq!(
+            scan_request_with_home(CleanupCategory::UserCache, None).unwrap_err(),
+            "HOME is not set"
+        );
     }
 }
