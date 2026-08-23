@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use crate::{CancellationToken, CleanupCategory, CleanupPlan, ExecutionPolicy, Planner, SafetyError};
+use crate::{
+    CancellationToken, CleanupCategory, CleanupPlan, ExecutionPolicy, Planner, SafetyError,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CleanupAction {
@@ -24,11 +26,17 @@ pub struct ExecutionReport {
 
 impl ExecutionReport {
     pub fn succeeded_count(&self) -> usize {
-        self.records.iter().filter(|record| record.result.is_ok()).count()
+        self.records
+            .iter()
+            .filter(|record| record.result.is_ok())
+            .count()
     }
 
     pub fn failed_count(&self) -> usize {
-        self.records.iter().filter(|record| record.result.is_err()).count()
+        self.records
+            .iter()
+            .filter(|record| record.result.is_err())
+            .count()
     }
 
     pub fn reclaimed_bytes(&self) -> u64 {
@@ -102,10 +110,8 @@ mod tests {
 
     #[test]
     fn cancellation_stops_before_next_item() {
-        let root = std::env::temp_dir().join(format!(
-            "dxtr-cleaner-executor-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("dxtr-cleaner-executor-{}", std::process::id()));
         fs::create_dir_all(&root).expect("create root");
         let first = root.join("a");
         let second = root.join("b");
