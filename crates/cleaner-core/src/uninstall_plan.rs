@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{
     ApplicationProtection, ApplicationProtectionPolicy, InstalledApplication, MatchConfidence,
@@ -13,13 +13,13 @@ pub enum UninstallPlanItemKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UninstallPlanItem {
-    pub path: PathBuf,
-    pub kind: UninstallPlanItemKind,
-    pub confidence: MatchConfidence,
-    pub selected: bool,
-    pub selectable: bool,
-    pub required: bool,
-    pub review_only: bool,
+    path: PathBuf,
+    kind: UninstallPlanItemKind,
+    confidence: MatchConfidence,
+    selected: bool,
+    selectable: bool,
+    required: bool,
+    review_only: bool,
 }
 
 impl UninstallPlanItem {
@@ -47,13 +47,41 @@ impl UninstallPlanItem {
             review_only,
         }
     }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn kind(&self) -> UninstallPlanItemKind {
+        self.kind
+    }
+
+    pub fn confidence(&self) -> MatchConfidence {
+        self.confidence
+    }
+
+    pub fn is_selected(&self) -> bool {
+        self.selected
+    }
+
+    pub fn is_selectable(&self) -> bool {
+        self.selectable
+    }
+
+    pub fn is_required(&self) -> bool {
+        self.required
+    }
+
+    pub fn is_review_only(&self) -> bool {
+        self.review_only
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UninstallPlan {
-    pub application: InstalledApplication,
-    pub protection: ApplicationProtection,
-    pub items: Vec<UninstallPlanItem>,
+    application: InstalledApplication,
+    protection: ApplicationProtection,
+    items: Vec<UninstallPlanItem>,
 }
 
 impl UninstallPlan {
@@ -87,6 +115,18 @@ impl UninstallPlan {
         }
     }
 
+    pub fn application(&self) -> &InstalledApplication {
+        &self.application
+    }
+
+    pub fn protection(&self) -> &ApplicationProtection {
+        &self.protection
+    }
+
+    pub fn items(&self) -> &[UninstallPlanItem] {
+        &self.items
+    }
+
     pub fn is_protected(&self) -> bool {
         self.protection.is_protected()
     }
@@ -95,7 +135,7 @@ impl UninstallPlan {
         self.items.iter().filter(|item| item.selected).count()
     }
 
-    pub fn set_selected(&mut self, path: &std::path::Path, selected: bool) -> bool {
+    pub fn set_selected(&mut self, path: &Path, selected: bool) -> bool {
         let Some(item) = self.items.iter_mut().find(|item| item.path == path) else {
             return false;
         };
@@ -111,7 +151,6 @@ impl UninstallPlan {
 mod tests {
     use super::*;
     use crate::{ApplicationLocation, ApplicationMetadata, MatchEvidence, RelatedFileCandidate};
-    use std::path::Path;
 
     fn app(bundle_identifier: &str) -> InstalledApplication {
         InstalledApplication::new(
@@ -149,21 +188,27 @@ mod tests {
 
         assert!(!plan.is_protected());
         assert_eq!(plan.selected_count(), 2);
-        assert!(plan.items.iter().any(|item| {
-            item.path.as_path() == Path::new("/Applications/Example.app")
-                && item.selected
-                && item.required
-                && !item.selectable
+        assert!(plan.items().iter().any(|item| {
+            item.path() == Path::new("/Applications/Example.app")
+                && item.is_selected()
+                && item.is_required()
+                && !item.is_selectable()
         }));
         assert!(!plan.set_selected(Path::new("/Applications/Example.app"), false));
-        assert!(plan.items.iter().any(|item| {
-            item.path.as_path() == Path::new("/tmp/high") && item.selected && !item.review_only
+        assert!(plan.items().iter().any(|item| {
+            item.path() == Path::new("/tmp/high")
+                && item.is_selected()
+                && !item.is_review_only()
         }));
-        assert!(plan.items.iter().any(|item| {
-            item.path.as_path() == Path::new("/tmp/medium") && !item.selected && item.review_only
+        assert!(plan.items().iter().any(|item| {
+            item.path() == Path::new("/tmp/medium")
+                && !item.is_selected()
+                && item.is_review_only()
         }));
-        assert!(plan.items.iter().any(|item| {
-            item.path.as_path() == Path::new("/tmp/low") && !item.selected && item.review_only
+        assert!(plan.items().iter().any(|item| {
+            item.path() == Path::new("/tmp/low")
+                && !item.is_selected()
+                && item.is_review_only()
         }));
     }
 
@@ -179,9 +224,9 @@ mod tests {
         assert!(plan.is_protected());
         assert_eq!(plan.selected_count(), 0);
         assert!(
-            plan.items
+            plan.items()
                 .iter()
-                .all(|item| !item.selected && !item.selectable && !item.required)
+                .all(|item| !item.is_selected() && !item.is_selectable() && !item.is_required())
         );
         assert!(!plan.set_selected(Path::new("/tmp/high"), true));
     }
@@ -196,8 +241,10 @@ mod tests {
         );
 
         assert!(plan.set_selected(Path::new("/tmp/medium"), true));
-        assert!(plan.items.iter().any(|item| {
-            item.path.as_path() == Path::new("/tmp/medium") && item.selected && item.review_only
+        assert!(plan.items().iter().any(|item| {
+            item.path() == Path::new("/tmp/medium")
+                && item.is_selected()
+                && item.is_review_only()
         }));
     }
 }
