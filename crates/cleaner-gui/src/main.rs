@@ -48,9 +48,9 @@ impl Render for CleanerApp {
                             .gap_4()
                             .child(div().text_xl().child("Reclaim your Mac"))
                             .child(
-                                div()
-                                    .text_color(rgb(0xa9afb8))
-                                    .child("Scan first. Review every cleanup plan before execution."),
+                                div().text_color(rgb(0xa9afb8)).child(
+                                    "Scan first. Review every cleanup plan before execution.",
+                                ),
                             )
                             .child(
                                 div()
