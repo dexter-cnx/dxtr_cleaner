@@ -110,9 +110,10 @@ fn collect_entries<F>(
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
-            report
-                .issues
-                .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
+            report.issues.push(OrphanFinderIssue::new(
+                root.to_path_buf(),
+                error.to_string(),
+            ));
             return;
         }
     };
@@ -135,9 +136,10 @@ fn collect_entries<F>(
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) => {
-            report
-                .issues
-                .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
+            report.issues.push(OrphanFinderIssue::new(
+                root.to_path_buf(),
+                error.to_string(),
+            ));
             return;
         }
     };
@@ -146,9 +148,10 @@ fn collect_entries<F>(
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                report
-                    .issues
-                    .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
+                report.issues.push(OrphanFinderIssue::new(
+                    root.to_path_buf(),
+                    error.to_string(),
+                ));
                 continue;
             }
         };
@@ -248,7 +251,10 @@ mod tests {
         let report = find_orphans_for_home(&[installed("com.example.live")], &home);
 
         assert_eq!(report.candidates.len(), 1);
-        assert_eq!(report.candidates[0].bundle_identifier, "com.example.removed");
+        assert_eq!(
+            report.candidates[0].bundle_identifier,
+            "com.example.removed"
+        );
         assert_eq!(report.candidates[0].confidence, MatchConfidence::High);
 
         fs::remove_dir_all(home).expect("temp root must be removed");
@@ -307,10 +313,12 @@ mod tests {
         let home = temp_root("entry-kind");
         fs::create_dir_all(home.join("Library/Preferences/com.example.not-a-file.plist"))
             .expect("directory preference fixture must be created");
-        fs::create_dir_all(home.join("Library/Caches"))
-            .expect("cache root must be created");
-        fs::write(home.join("Library/Caches/com.example.not-a-directory"), b"fixture")
-            .expect("cache file fixture must be created");
+        fs::create_dir_all(home.join("Library/Caches")).expect("cache root must be created");
+        fs::write(
+            home.join("Library/Caches/com.example.not-a-directory"),
+            b"fixture",
+        )
+        .expect("cache file fixture must be created");
 
         let report = find_orphans_for_home(&[], &home);
 
