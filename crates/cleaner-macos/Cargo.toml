@@ -1,0 +1,9 @@
+[package]
+name = "cleaner-macos"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cleaner-core.workspace = true

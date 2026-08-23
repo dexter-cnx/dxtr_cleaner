@@ -1,0 +1,22 @@
+[workspace]
+members = [
+  "crates/cleaner-core",
+  "crates/cleaner-macos",
+  "crates/cleaner-cli",
+  "crates/cleaner-gui",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+cleaner-core = { path = "crates/cleaner-core" }
+cleaner-macos = { path = "crates/cleaner-macos" }
+
+# GPUI is intentionally pinned to a Zed revision. Update only in dedicated dependency PRs.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "b05f40c5546b47bcf9561136dc0fcdcd9968cb63" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "b05f40c5546b47bcf9561136dc0fcdcd9968cb63", features = ["font-kit"] }
