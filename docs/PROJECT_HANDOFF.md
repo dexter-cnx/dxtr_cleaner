@@ -2,9 +2,9 @@
 
 ## Current state
 
-Milestone M0 foundation scaffold is complete.
+M0 is merged. M1 Smart Scan work is active on `feature/m1-smart-scan`.
 
-### Implemented
+### Implemented foundation
 
 - Rust workspace with four crates
 - `cleaner-core` domain model and filesystem scanner
@@ -12,12 +12,22 @@ Milestone M0 foundation scaffold is complete.
 - `cleaner-macos` platform boundary
 - `cleaner-cli` dry-run scan command
 - `cleaner-gui` GPUI Smart Care shell
-- CI workflow for format/test/clippy on macOS
+- CI and local `make prepush` quality gates
 - architecture and roadmap docs
+
+### M1 scan engine work
+
+- typed scan targets for User Cache, Xcode, Homebrew, and Node
+- explicit exclusion roots in `ScanRequest`
+- scan event sink with started/item/permission/finished/cancelled events
+- cooperative `CancellationToken`
+- symlink traversal protection retained
+- tests for events, exclusions, cancellation, and symlink behavior
+- CLI now builds requests from typed category targets
 
 ### Important safety decision
 
-M0 cannot delete or trash files. `ExecutionPolicy::default()` disables destructive
+Destructive execution remains disabled. `ExecutionPolicy::default()` disables destructive
 actions and `SystemMacPlatform::move_to_trash` intentionally returns an error.
 
 ### GPUI dependency
@@ -28,32 +38,25 @@ GPUI and `gpui_platform` are pinned to Zed commit:
 
 Do not float the dependency. Upgrade in a dedicated dependency PR.
 
-## Next branch
+## Remaining M1 tasks
 
-Suggested: `feature/m1-smart-scan`
+1. Add protected-path policy to scan target/request construction.
+2. Wire Smart Scan button to background scan execution in GPUI.
+3. Show live bytes/items per category from scan events.
+4. Wire cancellation control into GPUI.
+5. Add a deterministic permission-denied test seam/fixture.
+6. Keep execution disabled.
 
-### M1 tasks
+## Validation
 
-1. Add typed category scanners instead of generic roots.
-2. Add exclusions and protected-path policy.
-3. Add scan progress/event sink.
-4. Wire Smart Scan button to background scan execution in GPUI.
-5. Show live bytes/items per category.
-6. Add cancellation.
-7. Add test fixtures for permission denied and symlink traversal.
-8. Keep execution disabled.
-
-## Validation needed on a Mac
-
-The generation environment did not contain a Rust toolchain, so run:
+Before push on a development machine:
 
 ```bash
-rustup show
-cargo fmt --all
-cargo test -p cleaner-core -p cleaner-macos -p cleaner-cli
-cargo clippy -p cleaner-core -p cleaner-macos -p cleaner-cli --all-targets -- -D warnings
-cargo check -p cleaner-gui
-cargo run -p cleaner-gui
+make prepush
 ```
 
-Fix any GPUI API drift before starting M1.
+GitHub Actions runs the non-mutating equivalent:
+
+```bash
+make ci
+```
