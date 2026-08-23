@@ -92,14 +92,20 @@ mod tests {
 
     impl TrashBackend for RecordingTrash {
         fn move_to_trash(&self, path: &Path) -> Result<(), String> {
-            self.paths.lock().expect("lock paths").push(path.to_path_buf());
+            self.paths
+                .lock()
+                .expect("lock paths")
+                .push(path.to_path_buf());
             Ok(())
         }
     }
 
     #[test]
     fn cancellation_stops_before_next_item() {
-        let root = std::env::temp_dir().join(format!("dxtr-cleaner-executor-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!(
+            "dxtr-cleaner-executor-{}",
+            std::process::id()
+        ));
         fs::create_dir_all(&root).expect("create root");
         let first = root.join("a");
         let second = root.join("b");
@@ -120,9 +126,10 @@ mod tests {
                 })
                 .collect(),
         };
-        let policy = ExecutionPolicy::enabled(vec![
-            AllowedRoot::try_new(CleanupCategory::UserCache, root.clone()).expect("pin root"),
-        ]);
+        let policy = ExecutionPolicy::enabled(vec![AllowedRoot::new(
+            CleanupCategory::UserCache,
+            root.clone(),
+        )]);
         let cancellation = CancellationToken::new();
         cancellation.cancel();
         let backend = RecordingTrash::default();
