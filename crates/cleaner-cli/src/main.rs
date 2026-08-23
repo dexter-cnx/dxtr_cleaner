@@ -155,7 +155,7 @@ fn run_related_files(args: &[String]) -> ExitCode {
 fn run_orphan_finder() -> ExitCode {
     let platform = SystemMacPlatform;
     let inventory = platform.inventory();
-    let report = platform.find_orphans(&inventory.applications);
+    let report = platform.find_orphans(&inventory);
 
     for candidate in &report.candidates {
         println!(
@@ -185,7 +185,12 @@ fn run_orphan_finder() -> ExitCode {
     println!("orphans: {}", report.candidates.len());
     println!("inventory warnings: {}", inventory.issues.len());
     println!("orphan warnings: {}", report.issues.len());
-    ExitCode::SUCCESS
+
+    if report.issues.is_empty() {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
