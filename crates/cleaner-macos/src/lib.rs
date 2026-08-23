@@ -1,4 +1,5 @@
 mod app_metadata;
+mod related_files;
 
 use std::{
     fs,
@@ -8,8 +9,10 @@ use std::{
 use app_metadata::extract_application_metadata;
 use cleaner_core::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
-    ApplicationLocation, InstalledApplication, PermanentDeleteBackend, TrashBackend,
+    ApplicationLocation, InstalledApplication, PermanentDeleteBackend, RelatedFileMatcher,
+    RelatedFileReport, TrashBackend,
 };
+use related_files::related_files_for_home;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionStatus {
@@ -116,6 +119,15 @@ impl ApplicationInventory for SystemMacPlatform {
                 )],
             }
         }
+    }
+}
+
+impl RelatedFileMatcher for SystemMacPlatform {
+    fn related_files(&self, application: &InstalledApplication) -> RelatedFileReport {
+        let Some(home) = std::env::var_os("HOME") else {
+            return RelatedFileReport::default();
+        };
+        related_files_for_home(application, &PathBuf::from(home))
     }
 }
 
