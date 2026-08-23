@@ -1,6 +1,7 @@
 mod action_policy;
 mod app_inventory;
 mod app_protection;
+mod bundle_identifier;
 mod executor;
 mod model;
 mod orphan;
@@ -20,6 +21,7 @@ pub use app_inventory::{
 pub use app_protection::{
     ApplicationProtection, ApplicationProtectionPolicy, ApplicationProtectionReason,
 };
+pub use bundle_identifier::{is_apple_bundle_identifier, is_safe_bundle_identifier};
 pub use executor::{
     CleanupBackend, CleanupExecutor, ExecutionFailure, ExecutionRecord, ExecutionReport,
     PermanentDeleteBackend, TrashBackend,
