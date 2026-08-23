@@ -33,6 +33,19 @@ pub enum RelatedFileKind {
     SavedState,
 }
 
+impl RelatedFileKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ApplicationSupport => "application-support",
+            Self::Cache => "cache",
+            Self::Container => "container",
+            Self::HttpStorage => "http-storage",
+            Self::Preference => "preference",
+            Self::SavedState => "saved-state",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MatchEvidence {
     ExactBundleIdentifier(String),
