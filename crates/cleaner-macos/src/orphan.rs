@@ -88,9 +88,10 @@ fn collect_entries<F>(
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
-            report
-                .issues
-                .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
+            report.issues.push(OrphanFinderIssue::new(
+                root.to_path_buf(),
+                error.to_string(),
+            ));
             return;
         }
     };
@@ -113,9 +114,10 @@ fn collect_entries<F>(
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) => {
-            report
-                .issues
-                .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
+            report.issues.push(OrphanFinderIssue::new(
+                root.to_path_buf(),
+                error.to_string(),
+            ));
             return;
         }
     };
@@ -124,9 +126,10 @@ fn collect_entries<F>(
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                report
-                    .issues
-                    .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
+                report.issues.push(OrphanFinderIssue::new(
+                    root.to_path_buf(),
+                    error.to_string(),
+                ));
                 continue;
             }
         };
@@ -238,10 +241,7 @@ mod tests {
         let report = find_orphans_for_home(&[], &home);
 
         assert_eq!(report.candidates.len(), 1);
-        assert_eq!(
-            report.candidates[0].bundle_identifier,
-            "com.example.orphan"
-        );
+        assert_eq!(report.candidates[0].bundle_identifier, "com.example.orphan");
 
         fs::remove_dir_all(home).expect("temp root must be removed");
     }
@@ -251,8 +251,10 @@ mod tests {
         let home = temp_root("suffixes");
         fs::create_dir_all(home.join("Library/Preferences"))
             .expect("preferences root must be created");
-        fs::create_dir_all(home.join("Library/Saved Application State/com.example.state.savedState"))
-            .expect("saved state fixture must be created");
+        fs::create_dir_all(
+            home.join("Library/Saved Application State/com.example.state.savedState"),
+        )
+        .expect("saved state fixture must be created");
         fs::write(
             home.join("Library/Preferences/com.example.pref.plist"),
             b"fixture",
