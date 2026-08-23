@@ -2,8 +2,6 @@
 
 A macOS-first system cleaner/uninstaller prototype built with **Rust + GPUI**.
 
-This project is an independent implementation inspired by the product category represented by tools such as PureMac. It does **not** copy PureMac source code.
-
 ## Goals
 
 - Rust-first scan/cleanup engine.
