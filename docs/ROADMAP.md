@@ -45,6 +45,9 @@ Permanent delete remains an explicit core policy capability rather than a fronte
 - [x] confidence tiers
 - [x] system-app protection
 - [x] orphan finder
+- [x] reviewed uninstall planning
+- [x] Trash-only core execution foundation
+- [ ] GPUI uninstall review + execution wiring
 
 The inventory slice discovers `.app` bundles under `/Applications`, `/System/Applications`, and `~/Applications`, including nested application folders. App bundles are treated as leaves, directory symlinks are never followed, unreadable subtrees are reported as partial-result warnings, and the shared inventory model remains frontend-neutral. `dxtr-cleaner apps` provides a CLI validation surface for the same Rust inventory API.
 
@@ -52,11 +55,13 @@ Application metadata extraction records bundle identifier/version data from `Inf
 
 Related-file matching is evidence-driven and read-only. Exact bundle-identifier paths are High confidence, bundle-prefixed `Preferences/ByHost` entries are Medium confidence, and exact display-name directory matches are Low confidence. Medium and Low candidates are explicitly review-only. TeamIdentifier is not sufficient evidence by itself because multiple applications from the same developer can share one team identity. Candidate symlinks are excluded and duplicate paths keep the strongest available evidence.
 
-System-app protection is centralized in `cleaner-core`. Applications are protected when inventory classifies them as system applications, when their path is under known macOS system application roots, or when their bundle identifier uses the exact `com.apple` namespace. Protection produces typed reasons for frontend display and is intentionally conservative: ordinary third-party applications in `/Applications` remain unprotected, while Apple/system applications fail closed before any future uninstall plan can be constructed.
+System-app protection is centralized in `cleaner-core`. Applications are protected when inventory classifies them as system applications, when their path is under known macOS system application roots, or when their bundle identifier uses the exact `com.apple` namespace. Protection produces typed reasons for frontend display and is intentionally conservative: ordinary third-party applications in `/Applications` remain unprotected, while Apple/system applications fail closed before any uninstall execution policy can be constructed.
 
 Orphan discovery is also read-only. The installed application inventory provides the authoritative live bundle-identifier set, while the macOS adapter scans exact bundle-shaped entries under Application Support, Caches, Containers, HTTPStorages, Preferences, and Saved Application State. Candidates must pass path-safe bundle-ID validation and a reverse-DNS-shaped check, symlinks are excluded, live bundle IDs are excluded, and the `com.apple` namespace is always excluded defensively. `Preferences/ByHost` is intentionally not inferred as orphan ownership because separating a missing bundle ID from host-specific suffixes is not reliable enough. `dxtr-cleaner orphans` exposes the same API for CLI validation.
 
-No M3 uninstall mutation is enabled yet. A reviewed uninstall plan and execution path must be designed as a separate safety slice after the inventory, metadata, related-file, protection, and orphan evidence foundations are merged.
+Reviewed uninstall planning is frontend-neutral. The application bundle is the required primary item for unprotected apps, High-confidence related files start selected, and Medium/Low evidence remains review-only and default-unselected. Policy-bearing selection fields stay private behind the core plan API.
+
+The Trash-only execution foundation pins the post-review selected set, requires fresh related-file evidence before a related path can be pinned, revalidates current application identity and protection immediately before execution, rejects symlinks and broad protected roots, verifies expected filesystem types, and aborts if canonical paths change. Related data is trashed before the required app bundle so cancellation preferentially leaves the application installed. Permanent deletion remains disabled.
 
 ## M4 — macOS integration
 
