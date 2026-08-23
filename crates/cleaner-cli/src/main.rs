@@ -1,9 +1,9 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
 use cleaner_core::{
-    ApplicationInventory, CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan,
-    NodeScan, Planner, RelatedFileMatcher, ScanSummary, Scanner, SystemCacheScan, UserCacheScan,
-    XcodeScan,
+    ApplicationInventory, ApplicationProtectionPolicy, CategoryScanTarget, CleanupCategory,
+    FileSystemScanner, HomebrewScan, NodeScan, Planner, RelatedFileMatcher, ScanSummary, Scanner,
+    SystemCacheScan, UserCacheScan, XcodeScan,
 };
 use cleaner_macos::SystemMacPlatform;
 
@@ -60,10 +60,18 @@ fn run_scan(args: &[String]) -> ExitCode {
 
 fn run_app_inventory() -> ExitCode {
     let report = SystemMacPlatform.inventory();
+    let protection_policy = ApplicationProtectionPolicy;
 
     for application in &report.applications {
+        let protection = protection_policy.evaluate(application);
+        let protection_reasons = protection
+            .reasons()
+            .iter()
+            .map(|reason| reason.label())
+            .collect::<Vec<_>>()
+            .join(",");
         println!(
-            "{}\t{}\t{}\tbundle={}\tversion={}\tbuild={}\tteam={}",
+            "{}\t{}\t{}\tbundle={}\tversion={}\tbuild={}\tteam={}\tprotected={}\treasons={}",
             application.location.label(),
             application.name,
             application.path.display(),
@@ -82,7 +90,13 @@ fn run_app_inventory() -> ExitCode {
                 .metadata
                 .team_identifier
                 .as_deref()
-                .unwrap_or("-")
+                .unwrap_or("-"),
+            protection.is_protected(),
+            if protection_reasons.is_empty() {
+                "-"
+            } else {
+                &protection_reasons
+            }
         );
     }
     for issue in &report.issues {

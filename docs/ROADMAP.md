@@ -43,7 +43,7 @@ Permanent delete remains an explicit core policy capability rather than a fronte
 - [x] bundle/team metadata
 - [x] related-file matcher
 - [x] confidence tiers
-- [ ] system-app protection
+- [x] system-app protection
 - [ ] orphan finder
 
 The inventory slice discovers `.app` bundles under `/Applications`, `/System/Applications`, and `~/Applications`, including nested application folders. App bundles are treated as leaves, directory symlinks are never followed, unreadable subtrees are reported as partial-result warnings, and the shared inventory model remains frontend-neutral. `dxtr-cleaner apps` provides a CLI validation surface for the same Rust inventory API.
@@ -51,6 +51,8 @@ The inventory slice discovers `.app` bundles under `/Applications`, `/System/App
 Application metadata extraction records bundle identifier/version data from `Info.plist` and signing TeamIdentifier when available without dropping unsigned or partially readable applications from inventory.
 
 Related-file matching is evidence-driven and read-only. Exact bundle-identifier paths are High confidence, bundle-prefixed `Preferences/ByHost` entries are Medium confidence, and exact display-name directory matches are Low confidence. Medium and Low candidates are explicitly review-only. TeamIdentifier is not sufficient evidence by itself because multiple applications from the same developer can share one team identity. Candidate symlinks are excluded and duplicate paths keep the strongest available evidence.
+
+System-app protection is centralized in `cleaner-core`. Applications are protected when inventory classifies them as system applications, when their path is under known macOS system application roots, or when their bundle identifier uses the exact `com.apple` namespace. Protection produces typed reasons for frontend display and is intentionally conservative: ordinary third-party applications in `/Applications` remain unprotected, while Apple/system applications fail closed before any future uninstall plan can be constructed.
 
 ## M4 — macOS integration
 
