@@ -11,8 +11,23 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let category = parse_category(&args).unwrap_or(CleanupCategory::UserCache);
-    let roots = default_roots(category);
+    let category = match parse_category(&args) {
+        Ok(category) => category,
+        Err(error) => {
+            eprintln!("{error}");
+            print_usage();
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let roots = match default_roots(category) {
+        Ok(roots) => roots,
+        Err(error) => {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let scanner = FileSystemScanner;
 
     match scanner.scan(&ScanRequest { category, roots }) {
@@ -33,39 +48,46 @@ fn main() -> ExitCode {
     }
 }
 
-fn parse_category(args: &[String]) -> Option<CleanupCategory> {
-    let value = args
-        .windows(2)
-        .find(|pair| pair[0] == "--category")
-        .map(|pair| pair[1].as_str())?;
+fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
+    let Some(index) = args.iter().position(|arg| arg == "--category") else {
+        return Ok(CleanupCategory::UserCache);
+    };
 
-    match value {
-        "user" | "cache" => Some(CleanupCategory::UserCache),
-        "system" => Some(CleanupCategory::SystemCache),
-        "dev" | "xcode" => Some(CleanupCategory::Xcode),
-        "brew" | "homebrew" => Some(CleanupCategory::Homebrew),
-        "node" => Some(CleanupCategory::Node),
-        "docker" => Some(CleanupCategory::Docker),
-        "large" => Some(CleanupCategory::LargeFiles),
-        _ => None,
+    let value = args
+        .get(index + 1)
+        .ok_or_else(|| "--category requires a value".to_string())?;
+
+    match value.as_str() {
+        "user" | "cache" => Ok(CleanupCategory::UserCache),
+        "system" => Ok(CleanupCategory::SystemCache),
+        "dev" | "xcode" => Ok(CleanupCategory::Xcode),
+        "brew" | "homebrew" => Ok(CleanupCategory::Homebrew),
+        "node" => Ok(CleanupCategory::Node),
+        "docker" => Ok(CleanupCategory::Docker),
+        "large" => Ok(CleanupCategory::LargeFiles),
+        _ => Err(format!("unknown category: {value}")),
     }
 }
 
-fn default_roots(category: CleanupCategory) -> Vec<PathBuf> {
-    let home = env::var_os("HOME").map(PathBuf::from);
-    match (category, home) {
-        (CleanupCategory::UserCache, Some(home)) => vec![home.join("Library/Caches")],
-        (CleanupCategory::Xcode, Some(home)) => {
-            vec![home.join("Library/Developer/Xcode/DerivedData")]
+fn default_roots(category: CleanupCategory) -> Result<Vec<PathBuf>, String> {
+    let home = env::var_os("HOME")
+        .map(PathBuf::from)
+        .ok_or_else(|| "HOME is not set".to_string())?;
+
+    match category {
+        CleanupCategory::UserCache => Ok(vec![home.join("Library/Caches")]),
+        CleanupCategory::Xcode => Ok(vec![home.join("Library/Developer/Xcode/DerivedData")]),
+        CleanupCategory::Homebrew => Ok(vec![home.join("Library/Caches/Homebrew")]),
+        CleanupCategory::Node => Ok(vec![home.join(".npm"), home.join("Library/pnpm/store")]),
+        CleanupCategory::SystemCache | CleanupCategory::Docker | CleanupCategory::LargeFiles => {
+            Err(format!(
+                "category '{}' is not implemented in M0",
+                category.label()
+            ))
         }
-        (CleanupCategory::Homebrew, Some(home)) => vec![home.join("Library/Caches/Homebrew")],
-        (CleanupCategory::Node, Some(home)) => {
-            vec![home.join(".npm"), home.join("Library/pnpm/store")]
-        }
-        _ => Vec::new(),
     }
 }
 
 fn print_usage() {
-    println!("dxtr-cleaner scan [--category user|system|dev|brew|node|docker|large]");
+    println!("dxtr-cleaner scan [--category user|dev|brew|node]");
 }
