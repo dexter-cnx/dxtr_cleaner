@@ -2,8 +2,8 @@
 
 ## Current state
 
-M0 and the M1 typed Smart Scan engine are merged. GPUI Smart Scan wiring is active on
-`feature/m1-gpui-smart-scan`.
+M0 and the main M1 Smart Scan interaction are merged. Final M1 hardening is active on
+`feature/m1-scan-hardening`.
 
 ### Implemented foundation
 
@@ -20,18 +20,22 @@ M0 and the M1 typed Smart Scan engine are merged. GPUI Smart Scan wiring is acti
 
 - typed scan targets for User Cache, Xcode, Homebrew, and Node
 - explicit exclusion roots in `ScanRequest`
+- User Cache excludes Homebrew to prevent double-counted metrics
 - scan event sink with started/item/permission/finished/cancelled events
 - cooperative `CancellationToken`
 - symlink traversal protection retained
 - root-level permission errors are not hidden by `Path::exists()`
-- tests for events, exclusions, cancellation, missing optional roots, and symlink behavior
+- protected broad roots are rejected before filesystem traversal
+- safety checks lexically normalize parent components such as `..`
+- deterministic permission-denied error-classification coverage
 - CLI builds requests from typed category targets
 
-### M1 GPUI wiring in progress
+### M1 GPUI Smart Scan
 
-- Smart Scan starts filesystem work on a worker thread
+- Smart Scan runs filesystem work on a worker thread
 - scan events cross into GPUI through a channel
-- User Cache, Xcode, and Homebrew cards show live bytes/items
+- event draining is bounded per tick so the UI and Cancel control remain responsive
+- User Cache, Xcode, Homebrew, and Node cards show live bytes/items
 - cancellation is wired to the core `CancellationToken`
 - permission-denied paths are surfaced in scan status
 - destructive execution remains disabled
@@ -40,6 +44,11 @@ M0 and the M1 typed Smart Scan engine are merged. GPUI Smart Scan wiring is acti
 
 Destructive execution remains disabled. `ExecutionPolicy::default()` disables destructive
 actions and `SystemMacPlatform::move_to_trash` intentionally returns an error.
+
+Protected broad roots are centralized in `cleaner-core` and shared by scan validation and
+cleanup-plan execution validation. Descendant paths such as `/Library/Caches` remain eligible
+for explicitly defined scanners while broad roots such as `/`, `/System`, and `/Library` are
+rejected.
 
 ### GPUI dependency
 
@@ -51,11 +60,10 @@ Do not float the dependency. Upgrade in a dedicated dependency PR.
 
 ## Remaining M1 tasks
 
-1. Add protected-path policy to scan target/request construction.
-2. Validate and harden GPUI background scan wiring against the pinned GPUI API.
-3. Add Node to Smart Scan UI once the main scan interaction is stable.
-4. Add a deterministic permission-denied test seam/fixture.
-5. Keep execution disabled.
+1. Validate this final hardening PR with `make ci`.
+2. Address review feedback, if any.
+3. Keep destructive execution disabled.
+4. Merge and mark M1 complete.
 
 ## Validation
 
