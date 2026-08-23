@@ -4,6 +4,8 @@
 
 M0 and M1 Smart Scan are complete and merged to `main`.
 
+M2 is in progress on `feature/m2-review-cleaning`. The first M2 slice adds a frontend-neutral cleanup-plan review model plus a GPUI review panel. Destructive execution remains disabled.
+
 ### Implemented foundation
 
 - Rust workspace with four crates
@@ -39,6 +41,16 @@ M0 and M1 Smart Scan are complete and merged to `main`.
 - cancellation is wired to the core `CancellationToken`
 - permission-denied paths are surfaced in scan status
 - destructive execution remains disabled
+
+### M2 review slice
+
+- scan results are retained as typed `ScanItem` values and converted through `Planner::build`
+- `CleanupPlan` exposes frontend-neutral selected count/bytes and select-all/category/path selection helpers
+- symlink entries remain impossible to select through the shared plan helpers
+- GPUI shows cleanup-plan totals and the first review rows with path, size, and selection/protection state
+- GPUI supports select-all-safe-items and deselect-all controls
+- a new scan replaces the previous plan rather than carrying stale selections forward
+- execution is intentionally not wired yet
 
 ### Important safety decision
 
@@ -91,19 +103,19 @@ Ownership rules:
 
 Windows remains a later target after the macOS flow is stable. A GPUI Windows feasibility spike is planned first, while a Flutter desktop spike remains an explicit alternative if GPUI Windows maturity or production ergonomics are insufficient.
 
-## Next milestone
+## Next M2 slices
 
-M2 — review + cleaning:
+Continue M2 in safety-first order:
 
-1. cleanup plan review UI
-2. move-to-trash where appropriate
-3. permanent-delete policy by category
-4. symlink-safe canonicalization and execution-time revalidation
-5. allow-list enforcement
-6. execution report
-7. cancellation
+1. move-to-trash adapter contract and category action policy
+2. permanent-delete policy by category
+3. symlink-safe canonicalization and execution-time revalidation
+4. allow-list enforcement
+5. execution report and frontend-neutral execution events
+6. execution cancellation
+7. only then wire the destructive GPUI action
 
-Keep destructive execution disabled until the M2 review/revalidation boundaries are implemented and tested.
+Keep destructive execution disabled until the revalidation and allow-list boundaries are implemented and tested.
 
 ## Validation
 
