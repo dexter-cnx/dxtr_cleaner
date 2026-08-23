@@ -111,6 +111,7 @@ impl UninstallPlan {
 mod tests {
     use super::*;
     use crate::{ApplicationLocation, ApplicationMetadata, MatchEvidence, RelatedFileCandidate};
+    use std::path::Path;
 
     fn app(bundle_identifier: &str) -> InstalledApplication {
         InstalledApplication::new(
@@ -149,20 +150,20 @@ mod tests {
         assert!(!plan.is_protected());
         assert_eq!(plan.selected_count(), 2);
         assert!(plan.items.iter().any(|item| {
-            item.path == PathBuf::from("/Applications/Example.app")
+            item.path.as_path() == Path::new("/Applications/Example.app")
                 && item.selected
                 && item.required
                 && !item.selectable
         }));
-        assert!(!plan.set_selected(std::path::Path::new("/Applications/Example.app"), false));
+        assert!(!plan.set_selected(Path::new("/Applications/Example.app"), false));
         assert!(plan.items.iter().any(|item| {
-            item.path == PathBuf::from("/tmp/high") && item.selected && !item.review_only
+            item.path.as_path() == Path::new("/tmp/high") && item.selected && !item.review_only
         }));
         assert!(plan.items.iter().any(|item| {
-            item.path == PathBuf::from("/tmp/medium") && !item.selected && item.review_only
+            item.path.as_path() == Path::new("/tmp/medium") && !item.selected && item.review_only
         }));
         assert!(plan.items.iter().any(|item| {
-            item.path == PathBuf::from("/tmp/low") && !item.selected && item.review_only
+            item.path.as_path() == Path::new("/tmp/low") && !item.selected && item.review_only
         }));
     }
 
@@ -182,7 +183,7 @@ mod tests {
                 .iter()
                 .all(|item| !item.selected && !item.selectable && !item.required)
         );
-        assert!(!plan.set_selected(std::path::Path::new("/tmp/high"), true));
+        assert!(!plan.set_selected(Path::new("/tmp/high"), true));
     }
 
     #[test]
@@ -194,9 +195,9 @@ mod tests {
             },
         );
 
-        assert!(plan.set_selected(std::path::Path::new("/tmp/medium"), true));
+        assert!(plan.set_selected(Path::new("/tmp/medium"), true));
         assert!(plan.items.iter().any(|item| {
-            item.path == PathBuf::from("/tmp/medium") && item.selected && item.review_only
+            item.path.as_path() == Path::new("/tmp/medium") && item.selected && item.review_only
         }));
     }
 }
