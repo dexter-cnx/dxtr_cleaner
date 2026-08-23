@@ -44,7 +44,7 @@ Permanent delete remains an explicit core policy capability rather than a fronte
 - [x] related-file matcher
 - [x] confidence tiers
 - [x] system-app protection
-- [ ] orphan finder
+- [x] orphan finder
 
 The inventory slice discovers `.app` bundles under `/Applications`, `/System/Applications`, and `~/Applications`, including nested application folders. App bundles are treated as leaves, directory symlinks are never followed, unreadable subtrees are reported as partial-result warnings, and the shared inventory model remains frontend-neutral. `dxtr-cleaner apps` provides a CLI validation surface for the same Rust inventory API.
 
@@ -53,6 +53,10 @@ Application metadata extraction records bundle identifier/version data from `Inf
 Related-file matching is evidence-driven and read-only. Exact bundle-identifier paths are High confidence, bundle-prefixed `Preferences/ByHost` entries are Medium confidence, and exact display-name directory matches are Low confidence. Medium and Low candidates are explicitly review-only. TeamIdentifier is not sufficient evidence by itself because multiple applications from the same developer can share one team identity. Candidate symlinks are excluded and duplicate paths keep the strongest available evidence.
 
 System-app protection is centralized in `cleaner-core`. Applications are protected when inventory classifies them as system applications, when their path is under known macOS system application roots, or when their bundle identifier uses the exact `com.apple` namespace. Protection produces typed reasons for frontend display and is intentionally conservative: ordinary third-party applications in `/Applications` remain unprotected, while Apple/system applications fail closed before any future uninstall plan can be constructed.
+
+Orphan discovery is also read-only. The installed application inventory provides the authoritative live bundle-identifier set, while the macOS adapter scans exact bundle-shaped entries under Application Support, Caches, Containers, HTTPStorages, Preferences, and Saved Application State. Candidates must pass path-safe bundle-ID validation and a reverse-DNS-shaped check, symlinks are excluded, live bundle IDs are excluded, and the `com.apple` namespace is always excluded defensively. `Preferences/ByHost` is intentionally not inferred as orphan ownership because separating a missing bundle ID from host-specific suffixes is not reliable enough. `dxtr-cleaner orphans` exposes the same API for CLI validation.
+
+No M3 uninstall mutation is enabled yet. A reviewed uninstall plan and execution path must be designed as a separate safety slice after the inventory, metadata, related-file, protection, and orphan evidence foundations are merged.
 
 ## M4 — macOS integration
 

@@ -1,8 +1,10 @@
 mod action_policy;
 mod app_inventory;
 mod app_protection;
+mod bundle_identifier;
 mod executor;
 mod model;
+mod orphan;
 mod planner;
 mod related_files;
 mod safety;
@@ -19,11 +21,13 @@ pub use app_inventory::{
 pub use app_protection::{
     ApplicationProtection, ApplicationProtectionPolicy, ApplicationProtectionReason,
 };
+pub use bundle_identifier::{is_apple_bundle_identifier, is_safe_bundle_identifier};
 pub use executor::{
     CleanupBackend, CleanupExecutor, ExecutionFailure, ExecutionRecord, ExecutionReport,
     PermanentDeleteBackend, TrashBackend,
 };
 pub use model::{CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, ScanSummary};
+pub use orphan::{OrphanCandidate, OrphanFinder, OrphanFinderIssue, OrphanReport};
 pub use planner::{AllowedRoot, ExecutionPolicy, Planner, SafetyError};
 pub use related_files::{
     MatchConfidence, MatchEvidence, RelatedFileCandidate, RelatedFileKind, RelatedFileMatcher,

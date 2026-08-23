@@ -2,9 +2,9 @@
 
 ## Current state
 
-M0, M1 Smart Scan, and M2 review + Trash-only execution are complete and merged to `main`. M3.1 installed-application inventory and M3.2 bundle/team metadata are also merged. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
+M0, M1 Smart Scan, and M2 review + Trash-only execution are complete and merged to `main`. M3.1 installed-application inventory, M3.2 bundle/team metadata, M3.3 related-file matching/confidence tiers, and M3.4 system-app protection are merged. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
 
-M3.3 is implemented on `feature/m3-related-files`: related-file matching and confidence tiers remain frontend-neutral in `cleaner-core`, while `cleaner-macos` maps installed applications to read-only candidate paths under the user's Library. `dxtr-cleaner related <bundle-id>` provides a CLI validation surface for the same matcher.
+M3.5 orphan discovery is implemented on `feature/m3-orphan-finder`. The finder is read-only and frontend-neutral in `cleaner-core`; `cleaner-macos` scans bundle-shaped Library entries and `dxtr-cleaner orphans` provides a CLI validation surface.
 
 For a code-oriented tour of the repository, read [`CODE_WALKTHROUGH.md`](./CODE_WALKTHROUGH.md) before changing scan, cleanup, execution, GPUI, or platform-boundary code.
 
@@ -129,6 +129,31 @@ The macOS permanent-delete backend intentionally fails closed. A previous path-b
 - matcher remains read-only; it does not create an uninstall execution plan or mutate files
 - `dxtr-cleaner related <bundle-id>` exposes the same matcher for CLI validation
 
+### M3 system-app protection
+
+- `ApplicationProtectionPolicy` lives in `cleaner-core`
+- applications are protected when inventory classifies them as system applications
+- known macOS system application roots are protected defensively even if an upstream location classification is wrong
+- the exact `com.apple` bundle namespace is protected, while lookalike prefixes such as `com.appleish.*` are not
+- protection reasons are typed core data so GPUI and any future Flutter frontend can render the same policy result
+- ordinary third-party applications under `/Applications` remain eligible for future reviewed uninstall planning
+
+### M3 orphan finder
+
+- `OrphanFinder`, `OrphanCandidate`, `OrphanFinderIssue`, and `OrphanReport` live in `cleaner-core`
+- orphan discovery consumes the full `ApplicationInventoryReport`, not just the successful application slice
+- if application inventory is partial (`inventory.issues` is non-empty), orphan classification fails closed and returns no candidates
+- missing `HOME` is an explicit orphan-finder issue rather than an empty-success result
+- only safe reverse-DNS-shaped bundle identifiers and expected filesystem entry kinds are considered
+- current scan roots cover Application Support, Caches, Containers, HTTPStorages, Preferences, and Saved Application State
+- live top-level bundle identifiers and the exact `com.apple` namespace are excluded
+- symlinks are excluded
+- `Preferences/ByHost` is intentionally not inferred because the bundle-ID/host-suffix boundary is ambiguous
+- the current application inventory does not enumerate embedded `.appex`/`.xpc` bundle identifiers, so orphan candidates are conservatively **Medium confidence / review-only**
+- High-confidence orphan ownership must not be restored until nested bundle inventory closes that ownership gap
+- `dxtr-cleaner orphans` exits failure when orphan discovery cannot establish a complete scan
+- this slice is read-only and creates no uninstall execution plan
+
 ### Important safety decision
 
 `ExecutionPolicy::default()` disables mutation. A caller must explicitly construct an enabled execution policy with pinned allow-list roots before `CleanupExecutor` performs any mutation.
@@ -168,7 +193,7 @@ GPUI frontend   Flutter frontend
 
 Ownership rules:
 
-- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, application inventory, related-file matching, and platform-native adapters.
+- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, application inventory, related-file matching, orphan discovery, and platform-native adapters.
 - Frontends own presentation, interaction, localization, and frontend state only.
 - GPUI-specific types must not leak into core/domain APIs.
 - Cleanup and uninstall rules must not be duplicated in GPUI or future Dart code.
@@ -180,14 +205,15 @@ Windows remains a later target after the macOS flow is stable. A GPUI Windows fe
 
 ## Next step
 
-Continue M3 app uninstaller in safety-first slices:
+After M3.5 is merged, design reviewed uninstall planning:
 
-1. merge related-file matcher + confidence tiers
-2. add system-app protection as a core policy boundary
-3. add orphan finder using installed bundle identifiers as the authoritative live-app set
-4. only then design reviewed uninstall execution
+1. protected applications must be impossible to select
+2. related-file confidence remains visible in the review model
+3. lower-confidence/review-only data stays default-unselected
+4. orphan data remains review-only until nested bundle ownership is complete
+5. execution starts Trash-only and revalidates paths at mutation time
 
-Do not infer ownership of related files from display names alone. Exact bundle identifiers remain the strongest ownership evidence; lower-confidence matches stay review-only. TeamIdentifier is useful for context/disambiguation but is never sufficient ownership evidence by itself.
+Do not infer ownership of related files from display names alone. Exact bundle identifiers remain the strongest ownership evidence; TeamIdentifier is useful only for context/disambiguation and is never sufficient ownership evidence by itself.
 
 Keep permanent deletion safety-locked until anchored/no-follow filesystem mutation is implemented and separately reviewed.
 

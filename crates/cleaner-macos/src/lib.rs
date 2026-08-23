@@ -1,4 +1,5 @@
 mod app_metadata;
+mod orphan;
 mod related_files;
 
 use std::{
@@ -9,9 +10,10 @@ use std::{
 use app_metadata::extract_application_metadata;
 use cleaner_core::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
-    ApplicationLocation, InstalledApplication, PermanentDeleteBackend, RelatedFileMatcher,
-    RelatedFileReport, TrashBackend,
+    ApplicationLocation, InstalledApplication, MatchConfidence, OrphanFinder, OrphanFinderIssue,
+    OrphanReport, PermanentDeleteBackend, RelatedFileMatcher, RelatedFileReport, TrashBackend,
 };
+use orphan::find_orphans_for_home;
 use related_files::related_files_for_home;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +130,40 @@ impl RelatedFileMatcher for SystemMacPlatform {
             return RelatedFileReport::default();
         };
         related_files_for_home(application, &PathBuf::from(home))
+    }
+}
+
+impl OrphanFinder for SystemMacPlatform {
+    fn find_orphans(&self, inventory: &ApplicationInventoryReport) -> OrphanReport {
+        if !inventory.issues.is_empty() {
+            return OrphanReport {
+                candidates: Vec::new(),
+                issues: vec![OrphanFinderIssue::new(
+                    PathBuf::from("<application-inventory>"),
+                    "application inventory is incomplete; orphan classification was skipped",
+                )],
+            };
+        }
+
+        let Some(home) = std::env::var_os("HOME") else {
+            return OrphanReport {
+                candidates: Vec::new(),
+                issues: vec![OrphanFinderIssue::new(
+                    PathBuf::from("$HOME"),
+                    "HOME is not set; orphan scan could not start",
+                )],
+            };
+        };
+
+        let mut report = find_orphans_for_home(&inventory.applications, &PathBuf::from(home));
+
+        // A top-level application may contain active nested bundles such as .appex or .xpc
+        // whose identifiers are not part of the current application inventory. Until nested
+        // bundle inventory is implemented, orphan ownership is therefore review-only.
+        for candidate in &mut report.candidates {
+            candidate.confidence = MatchConfidence::Medium;
+        }
+        report
     }
 }
 
@@ -394,5 +430,26 @@ mod tests {
 
         fs::remove_dir_all(parent).expect("temp root must be removed");
         fs::remove_dir_all(outside).expect("outside temp root must be removed");
+    }
+
+    #[test]
+    fn orphan_finder_skips_partial_inventory() {
+        let inventory = ApplicationInventoryReport {
+            applications: Vec::new(),
+            issues: vec![ApplicationInventoryIssue::new(
+                PathBuf::from("/Applications"),
+                "permission denied",
+            )],
+        };
+
+        let report = SystemMacPlatform.find_orphans(&inventory);
+
+        assert!(report.candidates.is_empty());
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("incomplete"))
+        );
     }
 }

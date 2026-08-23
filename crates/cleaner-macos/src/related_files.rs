@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use cleaner_core::{
     InstalledApplication, MatchConfidence, MatchEvidence, RelatedFileCandidate, RelatedFileKind,
-    RelatedFileReport,
+    RelatedFileReport, is_safe_bundle_identifier,
 };
 
 pub(crate) fn related_files_for_home(
@@ -94,21 +94,6 @@ pub(crate) fn related_files_for_home(
 
     report.sort_deterministically();
     report
-}
-
-fn is_safe_bundle_identifier(identifier: &str) -> bool {
-    if identifier.is_empty() || identifier.starts_with('.') || identifier.ends_with('.') {
-        return false;
-    }
-
-    identifier.split('.').all(|component| {
-        !component.is_empty()
-            && component != "."
-            && component != ".."
-            && component
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
-    })
 }
 
 fn collect_bundle_prefixed_entries(
@@ -301,6 +286,6 @@ mod tests {
         assert!(report.candidates.is_empty());
 
         fs::remove_dir_all(home).expect("temp root must be removed");
-        fs::remove_dir_all(outside).expect("outside root must be removed");
+        fs::remove_dir_all(outside).expect("outside temp root must be removed");
     }
 }
