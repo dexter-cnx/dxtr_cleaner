@@ -12,7 +12,12 @@ pub(crate) fn related_files_for_home(
     let library = home.join("Library");
     let mut report = RelatedFileReport::default();
 
-    if let Some(bundle_identifier) = application.metadata.bundle_identifier.as_deref() {
+    if let Some(bundle_identifier) = application
+        .metadata
+        .bundle_identifier
+        .as_deref()
+        .filter(|identifier| is_safe_bundle_identifier(identifier))
+    {
         let exact = MatchEvidence::ExactBundleIdentifier(bundle_identifier.to_owned());
         push_if_safe(
             &mut report,
@@ -89,6 +94,21 @@ pub(crate) fn related_files_for_home(
 
     report.sort_deterministically();
     report
+}
+
+fn is_safe_bundle_identifier(identifier: &str) -> bool {
+    if identifier.is_empty() || identifier.starts_with('.') || identifier.ends_with('.') {
+        return false;
+    }
+
+    identifier.split('.').all(|component| {
+        !component.is_empty()
+            && component != "."
+            && component != ".."
+            && component
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    })
 }
 
 fn collect_bundle_prefixed_entries(
@@ -204,6 +224,35 @@ mod tests {
                 && candidate.confidence.is_review_only()
         }));
 
+        fs::remove_dir_all(home).expect("temp root must be removed");
+    }
+
+    #[test]
+    fn rejects_unsafe_bundle_identifiers_before_joining_paths() {
+        for identifier in ["..", "/", "com/example/app", "com..example", ".com.example", "com.example."] {
+            assert!(!is_safe_bundle_identifier(identifier), "{identifier}");
+        }
+        assert!(is_safe_bundle_identifier("com.example.app"));
+        assert!(is_safe_bundle_identifier("com.example-app_2"));
+    }
+
+    #[test]
+    fn unsafe_bundle_identifier_never_creates_high_confidence_candidate() {
+        let home = temp_root("unsafe-bundle-id");
+        fs::create_dir_all(home.join("Library")).expect("Library fixture must be created");
+        let application = InstalledApplication::new(
+            PathBuf::from("/Applications/Example.app"),
+            "",
+            ApplicationLocation::Local,
+        )
+        .with_metadata(ApplicationMetadata {
+            bundle_identifier: Some("..".into()),
+            ..ApplicationMetadata::default()
+        });
+
+        let report = related_files_for_home(&application, &home);
+
+        assert!(report.candidates.is_empty());
         fs::remove_dir_all(home).expect("temp root must be removed");
     }
 
