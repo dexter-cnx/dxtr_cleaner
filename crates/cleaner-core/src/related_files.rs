@@ -36,6 +36,7 @@ pub enum RelatedFileKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MatchEvidence {
     ExactBundleIdentifier(String),
+    BundleIdentifierPrefix(String),
     ExactDisplayName(String),
 }
 
