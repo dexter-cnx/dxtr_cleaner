@@ -40,7 +40,23 @@ impl CategoryScanTarget for UserCacheScan {
     }
 
     fn excluded_roots(&self) -> Vec<PathBuf> {
-        vec![self.home.join("Library/Caches/Homebrew")]
+        vec![
+            self.home.join("Library/Caches/Homebrew"),
+            self.home.join("Library/Caches/Yarn"),
+        ]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SystemCacheScan;
+
+impl CategoryScanTarget for SystemCacheScan {
+    fn category(&self) -> CleanupCategory {
+        CleanupCategory::SystemCache
+    }
+
+    fn roots(&self) -> Vec<PathBuf> {
+        vec![PathBuf::from("/Library/Caches")]
     }
 }
 
@@ -103,7 +119,12 @@ impl CategoryScanTarget for NodeScan {
     }
 
     fn roots(&self) -> Vec<PathBuf> {
-        vec![self.home.join(".npm"), self.home.join("Library/pnpm/store")]
+        vec![
+            self.home.join(".npm"),
+            self.home.join("Library/pnpm/store"),
+            self.home.join("Library/Caches/Yarn"),
+            self.home.join(".yarn/berry/cache"),
+        ]
     }
 }
 
@@ -120,14 +141,33 @@ mod tests {
         assert_eq!(user.roots, vec![home.join("Library/Caches")]);
         assert_eq!(
             user.excluded_roots,
-            vec![home.join("Library/Caches/Homebrew")]
+            vec![
+                home.join("Library/Caches/Homebrew"),
+                home.join("Library/Caches/Yarn")
+            ]
         );
+
+        let system = SystemCacheScan.request();
+        assert_eq!(system.category, CleanupCategory::SystemCache);
+        assert_eq!(system.roots, vec![PathBuf::from("/Library/Caches")]);
 
         let xcode = XcodeScan::new(home.clone()).request();
         assert_eq!(xcode.category, CleanupCategory::Xcode);
         assert_eq!(
             xcode.roots,
             vec![home.join("Library/Developer/Xcode/DerivedData")]
+        );
+
+        let node = NodeScan::new(home.clone()).request();
+        assert_eq!(node.category, CleanupCategory::Node);
+        assert_eq!(
+            node.roots,
+            vec![
+                home.join(".npm"),
+                home.join("Library/pnpm/store"),
+                home.join("Library/Caches/Yarn"),
+                home.join(".yarn/berry/cache")
+            ]
         );
     }
 }
