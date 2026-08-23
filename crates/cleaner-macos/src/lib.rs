@@ -1,4 +1,5 @@
 mod app_metadata;
+mod orphan;
 mod related_files;
 
 use std::{
@@ -9,9 +10,10 @@ use std::{
 use app_metadata::extract_application_metadata;
 use cleaner_core::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
-    ApplicationLocation, InstalledApplication, PermanentDeleteBackend, RelatedFileMatcher,
-    RelatedFileReport, TrashBackend,
+    ApplicationLocation, InstalledApplication, OrphanFinder, OrphanReport, PermanentDeleteBackend,
+    RelatedFileMatcher, RelatedFileReport, TrashBackend,
 };
+use orphan::find_orphans_for_home;
 use related_files::related_files_for_home;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,6 +130,15 @@ impl RelatedFileMatcher for SystemMacPlatform {
             return RelatedFileReport::default();
         };
         related_files_for_home(application, &PathBuf::from(home))
+    }
+}
+
+impl OrphanFinder for SystemMacPlatform {
+    fn find_orphans(&self, installed: &[InstalledApplication]) -> OrphanReport {
+        let Some(home) = std::env::var_os("HOME") else {
+            return OrphanReport::default();
+        };
+        find_orphans_for_home(installed, &PathBuf::from(home))
     }
 }
 
