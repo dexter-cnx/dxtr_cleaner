@@ -9,9 +9,11 @@ This slice defines the review model only. It performs no filesystem mutation.
 - For an unprotected application, the `.app` bundle is a required primary item: it starts selected and cannot be deselected.
 - High-confidence related files start selected.
 - Medium- and Low-confidence related files are review-only, start unselected, and require explicit user opt-in.
+- Policy-bearing plan and item state is private; frontends get read-only accessors and can change selection only through the checked core plan API.
 - A frontend may toggle only selectable related-file items through the core plan API; it must not duplicate these rules.
 - Duplicate installed applications sharing one bundle identifier are treated as ambiguous by the CLI validation surface and are not auto-selected.
 - Incomplete application inventory prevents CLI plan construction.
+- Missing `HOME` also fails closed because user-installed applications and per-user related files cannot otherwise be inventoried completely.
 
 ## CLI validation
 
