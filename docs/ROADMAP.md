@@ -25,12 +25,14 @@
 ## M2 — review + cleaning
 
 - [x] cleanup plan review UI
-- [ ] move-to-trash where appropriate
-- [ ] permanent-delete policy by category
+- [x] move-to-trash where appropriate
+- [x] permanent-delete policy by category
 - [x] symlink-safe canonicalization and revalidation
 - [x] allow-list enforcement
-- [ ] execution report
-- [ ] cancellation
+- [x] execution report
+- [x] cancellation
+
+Permanent delete remains an explicit core policy opt-in. The default is Trash for every category; M2 permits permanent delete only for generated/cache categories (`UserCache`, `Xcode`, `Homebrew`, `Node`) and rejects it for `SystemCache`, `Docker`, and `LargeFiles`.
 
 ## M3 — app uninstaller
 
