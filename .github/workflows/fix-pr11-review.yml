@@ -1,0 +1,54 @@
+name: Fix PR11 cancellation review
+
+on:
+  push:
+    branches: [feature/m2-gpui-execution]
+    paths: [.github/workflows/fix-pr11-review.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/m2-gpui-execution
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply review fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('crates/cleaner-gui/src/main.rs')
+          s = p.read_text()
+
+          old = '''    fn set_all_review_items(&mut self, selected: bool, cx: &mut Context<Self>) {\n        if let Some(plan) = &mut self.cleanup_plan {\n            plan.set_all_selected(selected);\n            cx.notify();\n        }\n    }\n'''
+          new = '''    fn set_all_review_items(&mut self, selected: bool, cx: &mut Context<Self>) {\n        if matches!(\n            self.execution_state,\n            ExecutionState::Executing | ExecutionState::Cancelling\n        ) {\n            return;\n        }\n\n        if let Some(plan) = &mut self.cleanup_plan {\n            plan.set_all_selected(selected);\n            cx.notify();\n        }\n    }\n'''
+          if old not in s:
+              raise SystemExit('set_all_review_items block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''                .child(\n                    div()\n                        .flex()\n                        .gap_2()\n                        .child(\n                            div()\n                                .id("select-all")\n                                .px_3()\n                                .py_2()\n                                .rounded_md()\n                                .bg(rgb(0x2b303a))\n                                .cursor_pointer()\n                                .child("Select all safe items")\n                                .on_click(cx.listener(|this, _, _, cx| {\n                                    this.set_all_review_items(true, cx);\n                                })),\n                        )\n                        .child(\n                            div()\n                                .id("deselect-all")\n                                .px_3()\n                                .py_2()\n                                .rounded_md()\n                                .bg(rgb(0x2b303a))\n                                .cursor_pointer()\n                                .child("Deselect all")\n                                .on_click(cx.listener(|this, _, _, cx| {\n                                    this.set_all_review_items(false, cx);\n                                })),\n                        ),\n                )\n'''
+          new = '''                .when(!execution_active, |panel| {\n                    panel.child(\n                        div()\n                            .flex()\n                            .gap_2()\n                            .child(\n                                div()\n                                    .id("select-all")\n                                    .px_3()\n                                    .py_2()\n                                    .rounded_md()\n                                    .bg(rgb(0x2b303a))\n                                    .cursor_pointer()\n                                    .child("Select all safe items")\n                                    .on_click(cx.listener(|this, _, _, cx| {\n                                        this.set_all_review_items(true, cx);\n                                    })),\n                            )\n                            .child(\n                                div()\n                                    .id("deselect-all")\n                                    .px_3()\n                                    .py_2()\n                                    .rounded_md()\n                                    .bg(rgb(0x2b303a))\n                                    .cursor_pointer()\n                                    .child("Deselect all")\n                                    .on_click(cx.listener(|this, _, _, cx| {\n                                        this.set_all_review_items(false, cx);\n                                    })),\n                            ),\n                    )\n                })\n'''
+          if old not in s:
+              raise SystemExit('selection controls block not found')
+          s = s.replace(old, new, 1)
+
+          old = '''                .when(selected_count > 0, |panel| {\n                    panel.child(\n                        div()\n                            .flex()\n                            .items_center()\n                            .gap_3()\n                            .child(\n                                div()\n                                    .id("execute-trash")\n                                    .px_5()\n                                    .py_3()\n                                    .rounded_lg()\n                                    .bg(rgb(0x4f7cff))\n                                    .cursor_pointer()\n                                    .child(if execution_active {\n                                        "Moving to Trash…"\n                                    } else {\n                                        "Move selected to Trash"\n                                    })\n                                    .on_click(cx.listener(|this, _, window, cx| {\n                                        this.start_cleanup(window, cx);\n                                    })),\n                            )\n                            .when(execution_active, |row| {\n                                row.child(\n                                    div()\n                                        .id("cancel-cleanup")\n                                        .px_5()\n                                        .py_3()\n                                        .rounded_lg()\n                                        .bg(rgb(0x2b303a))\n                                        .cursor_pointer()\n                                        .child("Cancel cleanup")\n                                        .on_click(cx.listener(|this, _, _, cx| {\n                                            this.cancel_execution(cx);\n                                        })),\n                                )\n                            }),\n                    )\n                })\n'''
+          new = '''                .when(selected_count > 0 || execution_active, |panel| {\n                    panel.child(\n                        div()\n                            .flex()\n                            .items_center()\n                            .gap_3()\n                            .when(selected_count > 0 && !execution_active, |row| {\n                                row.child(\n                                    div()\n                                        .id("execute-trash")\n                                        .px_5()\n                                        .py_3()\n                                        .rounded_lg()\n                                        .bg(rgb(0x4f7cff))\n                                        .cursor_pointer()\n                                        .child("Move selected to Trash")\n                                        .on_click(cx.listener(|this, _, window, cx| {\n                                            this.start_cleanup(window, cx);\n                                        })),\n                                )\n                            })\n                            .when(execution_active, |row| {\n                                row.child(\n                                    div()\n                                        .id("cancel-cleanup")\n                                        .px_5()\n                                        .py_3()\n                                        .rounded_lg()\n                                        .bg(rgb(0x2b303a))\n                                        .cursor_pointer()\n                                        .child("Cancel cleanup")\n                                        .on_click(cx.listener(|this, _, _, cx| {\n                                            this.cancel_execution(cx);\n                                        })),\n                                )\n                            }),\n                    )\n                })\n'''
+          if old not in s:
+              raise SystemExit('execution action row block not found')
+          p.write_text(s.replace(old, new, 1))
+          PY
+          cargo fmt --all
+          rm .github/workflows/fix-pr11-review.yml
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/cleaner-gui/src/main.rs .github/workflows/fix-pr11-review.yml
+          git commit -m "fix: keep cleanup cancellation controls available"
+          git push origin HEAD:feature/m2-gpui-execution
