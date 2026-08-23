@@ -3,6 +3,7 @@ mod app_inventory;
 mod app_protection;
 mod executor;
 mod model;
+mod orphan;
 mod planner;
 mod related_files;
 mod safety;
@@ -24,6 +25,7 @@ pub use executor::{
     PermanentDeleteBackend, TrashBackend,
 };
 pub use model::{CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, ScanSummary};
+pub use orphan::{OrphanCandidate, OrphanFinder, OrphanFinderIssue, OrphanReport};
 pub use planner::{AllowedRoot, ExecutionPolicy, Planner, SafetyError};
 pub use related_files::{
     MatchConfidence, MatchEvidence, RelatedFileCandidate, RelatedFileKind, RelatedFileMatcher,
