@@ -8,7 +8,7 @@ use std::{
 
 use cleaner_core::{
     CancellationToken, CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan,
-    NodeScan, ScanEvent, Scanner, UserCacheScan, XcodeScan,
+    NodeScan, ScanEvent, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
 };
 use gpui::{
     App, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
@@ -56,6 +56,7 @@ enum UiMessage {
 struct CleanerApp {
     state: ScanState,
     user_cache: Metric,
+    system_cache: Metric,
     xcode: Metric,
     homebrew: Metric,
     node: Metric,
@@ -69,6 +70,7 @@ impl CleanerApp {
         Self {
             state: ScanState::Idle,
             user_cache: Metric::default(),
+            system_cache: Metric::default(),
             xcode: Metric::default(),
             homebrew: Metric::default(),
             node: Metric::default(),
@@ -80,6 +82,7 @@ impl CleanerApp {
 
     fn reset_metrics(&mut self) {
         self.user_cache = Metric::default();
+        self.system_cache = Metric::default();
         self.xcode = Metric::default();
         self.homebrew = Metric::default();
         self.node = Metric::default();
@@ -90,6 +93,7 @@ impl CleanerApp {
     fn metric_mut(&mut self, category: CleanupCategory) -> Option<&mut Metric> {
         match category {
             CleanupCategory::UserCache => Some(&mut self.user_cache),
+            CleanupCategory::SystemCache => Some(&mut self.system_cache),
             CleanupCategory::Xcode => Some(&mut self.xcode),
             CleanupCategory::Homebrew => Some(&mut self.homebrew),
             CleanupCategory::Node => Some(&mut self.node),
@@ -145,6 +149,7 @@ impl CleanerApp {
 
         let requests = vec![
             UserCacheScan::new(home.clone()).request(),
+            SystemCacheScan.request(),
             XcodeScan::new(home.clone()).request(),
             HomebrewScan::new(home.clone()).request(),
             NodeScan::new(home).request(),
@@ -347,6 +352,7 @@ impl Render for CleanerApp {
                             .flex()
                             .gap_4()
                             .child(metric_card("User Cache", self.user_cache))
+                            .child(metric_card("System Cache", self.system_cache))
                             .child(metric_card("Xcode", self.xcode))
                             .child(metric_card("Homebrew", self.homebrew))
                             .child(metric_card("Node", self.node)),
