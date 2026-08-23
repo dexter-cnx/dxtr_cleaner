@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  core:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Test core
+        run: cargo test -p cleaner-core -p cleaner-macos -p cleaner-cli
+      - name: Clippy core
+        run: cargo clippy -p cleaner-core -p cleaner-macos -p cleaner-cli --all-targets -- -D warnings
