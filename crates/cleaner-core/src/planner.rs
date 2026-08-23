@@ -2,17 +2,9 @@ use std::path::Path;
 
 use crate::{CleanupPlan, CleanupPlanItem, ScanItem};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ExecutionPolicy {
     pub destructive_actions_enabled: bool,
-}
-
-impl Default for ExecutionPolicy {
-    fn default() -> Self {
-        Self {
-            destructive_actions_enabled: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
