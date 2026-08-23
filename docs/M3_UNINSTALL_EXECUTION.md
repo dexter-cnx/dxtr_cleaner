@@ -10,13 +10,15 @@ This slice adds the core execution boundary for reviewed application uninstall p
 - System/Apple protection is re-evaluated against the current application immediately before mutation.
 - The selected path set is pinned after review. Any selection change after policy creation invalidates execution as stale.
 - Related-file items can be pinned only when the same path, kind, and confidence are still present in a fresh `RelatedFileReport`; the executor does not trust arbitrary plan paths as ownership evidence.
+- Each related-file kind must also provide an explicit execution root. The policy rejects symlinked roots, pins their canonical paths, and revalidates those roots immediately before Trash so a candidate cannot escape through an ancestor symlink or root swap.
 - Every selected path is checked with `symlink_metadata`, expected filesystem type, and canonicalization when the policy is pinned and again immediately before Trash.
-- A canonical-path change between review and execution aborts execution.
+- A canonical-path or execution-root change between review and execution stops further mutation.
 - Broad protected roots are rejected before mutation.
 - Symlinks are rejected.
 - Related files are moved before the required application bundle. The app bundle is moved last so cancellation during residual cleanup preferentially leaves the application installed.
 - Cancellation is cooperative through the shared `CancellationToken`.
 - Backend failures are preserved as per-item records; the executor never falls back to permanent deletion.
+- If runtime safety revalidation fails after earlier items have already been moved, the executor returns the accumulated execution records together with `safety_failure` and stops. Destructive side effects are therefore never hidden by an early error return.
 
 ## Mutation boundary
 
