@@ -36,16 +36,12 @@ pub fn spawn_trash_only_execution(
     thread::spawn(move || {
         let action_policy = CategoryActionPolicy::trash_only();
         let backend = SystemMacPlatform;
-        let message = match CleanupExecutor::execute(
-            &plan,
-            &policy,
-            &action_policy,
-            &cancellation,
-            &backend,
-        ) {
-            Ok(report) => ExecutionMessage::Completed(report),
-            Err(error) => ExecutionMessage::Failed(format!("{error:?}")),
-        };
+        let message =
+            match CleanupExecutor::execute(&plan, &policy, &action_policy, &cancellation, &backend)
+            {
+                Ok(report) => ExecutionMessage::Completed(report),
+                Err(error) => ExecutionMessage::Failed(format!("{error:?}")),
+            };
         let _ = tx.send(message);
     });
 

@@ -429,7 +429,11 @@ impl Render for CleanerApp {
 
         let execution_status = match (&self.execution_report, &self.execution_error) {
             (Some(report), _) => {
-                let cancelled = if report.cancelled { " · cancelled" } else { "" };
+                let cancelled = if report.cancelled {
+                    " · cancelled"
+                } else {
+                    ""
+                };
                 format!(
                     "{} · {} moved to Trash · {} failed · {}{}",
                     self.execution_state.label(),
@@ -475,11 +479,7 @@ impl Render for CleanerApp {
                         .items_center()
                         .justify_between()
                         .gap_3()
-                        .child(
-                            div()
-                                .flex_1()
-                                .child(entry.item.path.display().to_string()),
-                        )
+                        .child(div().flex_1().child(entry.item.path.display().to_string()))
                         .child(
                             div()
                                 .text_color(rgb(0xa9afb8))
@@ -504,14 +504,12 @@ impl Render for CleanerApp {
                         .items_center()
                         .justify_between()
                         .child(div().text_lg().child("Cleanup plan review"))
-                        .child(
-                            div().text_color(rgb(0xa9afb8)).child(format!(
-                                "{} of {} selected · {}",
-                                selected_count,
-                                total_count,
-                                format_bytes(selected_bytes)
-                            )),
-                        ),
+                        .child(div().text_color(rgb(0xa9afb8)).child(format!(
+                            "{} of {} selected · {}",
+                            selected_count,
+                            total_count,
+                            format_bytes(selected_bytes)
+                        ))),
                 )
                 .child(
                     div()
@@ -547,9 +545,9 @@ impl Render for CleanerApp {
                 .children(rows)
                 .when(hidden_count > 0, |panel| {
                     panel.child(
-                        div().text_color(rgb(0xa9afb8)).child(format!(
-                            "+ {hidden_count} more item(s) in this plan"
-                        )),
+                        div()
+                            .text_color(rgb(0xa9afb8))
+                            .child(format!("+ {hidden_count} more item(s) in this plan")),
                     )
                 })
                 .when(selected_count > 0, |panel| {
