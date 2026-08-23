@@ -18,18 +18,14 @@ const PROTECTED_BROAD_ROOTS: &[&str] = &[
 pub(crate) fn is_protected_broad_root(path: &Path) -> bool {
     let candidate = resolve_for_policy(path);
 
-    PROTECTED_BROAD_ROOTS.iter().any(|protected| {
-        let protected = Path::new(protected);
-        let protected = resolve_for_policy(protected);
-        candidate == protected
-    })
+    PROTECTED_BROAD_ROOTS
+        .iter()
+        .any(|protected| candidate == resolve_for_policy(Path::new(protected)))
 }
 
 fn resolve_for_policy(path: &Path) -> PathBuf {
-    match fs::canonicalize(path) {
-        Ok(resolved) => resolved,
-        Err(_) => normalize_lexically_case_insensitive(path),
-    }
+    let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    normalize_lexically_case_insensitive(&resolved)
 }
 
 fn normalize_lexically_case_insensitive(path: &Path) -> PathBuf {
