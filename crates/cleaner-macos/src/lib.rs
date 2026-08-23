@@ -445,6 +445,11 @@ mod tests {
         let report = SystemMacPlatform.find_orphans(&inventory);
 
         assert!(report.candidates.is_empty());
-        assert!(report.issues.iter().any(|issue| issue.message.contains("incomplete")));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("incomplete"))
+        );
     }
 }
