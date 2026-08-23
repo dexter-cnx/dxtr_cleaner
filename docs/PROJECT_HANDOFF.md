@@ -2,9 +2,9 @@
 
 ## Current state
 
-M0, M1 Smart Scan, and M2 review + Trash-only execution are complete and merged to `main`. M3.1 installed-application inventory and M3.2 bundle/team metadata are also merged. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
+M0, M1 Smart Scan, and M2 review + Trash-only execution are complete and merged to `main`. M3.1 installed-application inventory, M3.2 bundle/team metadata, M3.3 related-file matching + confidence tiers, and M3.4 system-app protection are merged. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
 
-M3.3 is implemented on `feature/m3-related-files`: related-file matching and confidence tiers remain frontend-neutral in `cleaner-core`, while `cleaner-macos` maps installed applications to read-only candidate paths under the user's Library. `dxtr-cleaner related <bundle-id>` provides a CLI validation surface for the same matcher.
+M3.5 is implemented on `feature/m3-orphan-finder`: the frontend-neutral orphan report/finder API lives in `cleaner-core`, while `cleaner-macos` scans high-confidence bundle-shaped Library entries against the installed bundle-ID set. `dxtr-cleaner orphans` is the CLI validation surface. This slice is read-only and adds no uninstall mutation.
 
 For a code-oriented tour of the repository, read [`CODE_WALKTHROUGH.md`](./CODE_WALKTHROUGH.md) before changing scan, cleanup, execution, GPUI, or platform-boundary code.
 
@@ -129,6 +129,35 @@ The macOS permanent-delete backend intentionally fails closed. A previous path-b
 - matcher remains read-only; it does not create an uninstall execution plan or mutate files
 - `dxtr-cleaner related <bundle-id>` exposes the same matcher for CLI validation
 
+### M3 system application protection
+
+- `ApplicationProtectionPolicy` lives in `cleaner-core`
+- applications classified as `ApplicationLocation::System` are protected
+- paths under `/System/Applications` and known CoreServices application roots are protected defensively
+- the exact `com.apple` bundle namespace is protected even when an Apple app appears outside the system roots
+- lookalike prefixes such as `com.appleish.*` are not treated as Apple
+- ordinary third-party apps under `/Applications` remain unprotected
+- typed protection reasons are exposed for GPUI/Flutter/CLI presentation
+- this is a policy boundary only; no uninstall mutation was added
+- the implementation must remain compatible with the declared Rust 1.85 MSRV
+
+### M3 orphan finder
+
+- `OrphanFinder`, `OrphanCandidate`, `OrphanFinderIssue`, and `OrphanReport` live in `cleaner-core`
+- shared bundle-ID validation is centralized in `cleaner-core` so related-file and orphan logic use the same path-safety rules
+- installed applications supply the authoritative live bundle-identifier set
+- macOS scans exact bundle-shaped entries under `~/Library/Application Support`, `Caches`, `Containers`, `HTTPStorages`, `Preferences`, and `Saved Application State`
+- an orphan identifier must pass path-safe validation and contain at least two reverse-DNS-style components, preventing generic folders such as `Adobe` from being classified as app ownership evidence
+- candidates whose bundle identifier is still installed are excluded
+- the exact `com.apple` namespace is always excluded defensively, even if inventory misses a system application
+- symlink roots are rejected with a warning and symlink candidates are never returned
+- unreadable roots/entries preserve partial-result issues instead of discarding successful candidates
+- duplicate paths retain the strongest confidence evidence
+- `Preferences/ByHost` is intentionally omitted from orphan inference because the bundle-ID/host-suffix boundary cannot be reconstructed reliably enough for a missing app
+- current orphan candidates are High confidence exact bundle-ID shapes only; lower-confidence name inference is intentionally not used
+- `dxtr-cleaner orphans` exercises the same API without GPUI-specific logic
+- this slice remains read-only and creates no uninstall plan or mutation path
+
 ### Important safety decision
 
 `ExecutionPolicy::default()` disables mutation. A caller must explicitly construct an enabled execution policy with pinned allow-list roots before `CleanupExecutor` performs any mutation.
@@ -136,6 +165,8 @@ The macOS permanent-delete backend intentionally fails closed. A previous path-b
 GPUI exposes only **Move selected to Trash**. It does not expose permanent deletion. The product badge explicitly states `Safe mode · Trash only`.
 
 Protected broad roots are centralized in `cleaner-core` and shared by scan validation and execution validation. Descendant paths such as `/Library/Caches` remain eligible for explicitly defined scanners while broad roots such as `/`, `/System`, and `/Library` are rejected.
+
+No M3 uninstall execution exists yet. Inventory, metadata, related-file matching, system protection, and orphan discovery are evidence/policy foundations only. Any future uninstall execution must build a reviewed plan from these APIs, revalidate at execution time, keep system-app protection mandatory, and remain Trash-only initially.
 
 ### GPUI dependency
 
@@ -168,7 +199,7 @@ GPUI frontend   Flutter frontend
 
 Ownership rules:
 
-- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, application inventory, related-file matching, and platform-native adapters.
+- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, application inventory, related-file matching, system-app protection, orphan discovery, and platform-native adapters.
 - Frontends own presentation, interaction, localization, and frontend state only.
 - GPUI-specific types must not leak into core/domain APIs.
 - Cleanup and uninstall rules must not be duplicated in GPUI or future Dart code.
@@ -180,14 +211,16 @@ Windows remains a later target after the macOS flow is stable. A GPUI Windows fe
 
 ## Next step
 
-Continue M3 app uninstaller in safety-first slices:
+After merging M3.5, the evidence/policy foundation for the app-uninstaller milestone is complete. The next safety-first slice is **reviewed uninstall planning**, not direct deletion:
 
-1. merge related-file matcher + confidence tiers
-2. add system-app protection as a core policy boundary
-3. add orphan finder using installed bundle identifiers as the authoritative live-app set
-4. only then design reviewed uninstall execution
+1. define a frontend-neutral uninstall plan model that includes the selected app, protection state, and related-file candidates with confidence/evidence
+2. protected applications must be impossible to select for uninstall in core policy
+3. Medium/Low related-file candidates remain review-only and default unselected
+4. stale plans must be invalidated/revalidated before execution
+5. initial execution should move the app and explicitly selected related files to Trash only
+6. permanent deletion remains outside the uninstall flow until anchored/no-follow mutation is implemented and separately reviewed
 
-Do not infer ownership of related files from display names alone. Exact bundle identifiers remain the strongest ownership evidence; lower-confidence matches stay review-only. TeamIdentifier is useful for context/disambiguation but is never sufficient ownership evidence by itself.
+Do not infer ownership from display names alone. Exact bundle identifiers remain the strongest ownership evidence; lower-confidence matches stay review-only. TeamIdentifier is useful for context/disambiguation but is never sufficient ownership evidence by itself.
 
 Keep permanent deletion safety-locked until anchored/no-follow filesystem mutation is implemented and separately reviewed.
 
