@@ -3,6 +3,7 @@ mod app_inventory;
 mod executor;
 mod model;
 mod planner;
+mod related_files;
 mod safety;
 mod scanner;
 mod target;
@@ -20,6 +21,10 @@ pub use executor::{
 };
 pub use model::{CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, ScanSummary};
 pub use planner::{AllowedRoot, ExecutionPolicy, Planner, SafetyError};
+pub use related_files::{
+    MatchConfidence, MatchEvidence, RelatedFileCandidate, RelatedFileKind, RelatedFileMatcher,
+    RelatedFileReport,
+};
 pub use scanner::{
     CancellationToken, FileSystemScanner, ScanEvent, ScanEventSink, ScanRequest, Scanner,
 };
