@@ -44,9 +44,7 @@ impl ExecutionReport {
     pub fn moved_bytes(&self) -> u64 {
         self.records
             .iter()
-            .filter(|record| {
-                record.result.is_ok() && record.action == CleanupAction::MoveToTrash
-            })
+            .filter(|record| record.result.is_ok() && record.action == CleanupAction::MoveToTrash)
             .map(|record| record.bytes)
             .sum()
     }
@@ -217,18 +215,25 @@ mod tests {
         cancellation.cancel();
         let backend = RecordingBackend::default();
 
-        let report = CleanupExecutor::execute(
-            &plan,
-            &policy,
-            &action_policy,
-            &cancellation,
-            &backend,
-        )
-        .expect("execution report");
+        let report =
+            CleanupExecutor::execute(&plan, &policy, &action_policy, &cancellation, &backend)
+                .expect("execution report");
         assert!(report.cancelled);
         assert!(report.records.is_empty());
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
-        assert!(backend.deleted.lock().expect("lock deleted paths").is_empty());
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
+        assert!(
+            backend
+                .deleted
+                .lock()
+                .expect("lock deleted paths")
+                .is_empty()
+        );
 
         fs::remove_dir_all(root).expect("remove root");
     }
@@ -271,10 +276,8 @@ mod tests {
 
     #[test]
     fn category_action_policy_drives_the_backend_operation() {
-        let root = std::env::temp_dir().join(format!(
-            "dxtr-cleaner-action-policy-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("dxtr-cleaner-action-policy-{}", std::process::id()));
         fs::create_dir_all(&root).expect("create root");
         let path = root.join("cache");
         fs::write(&path, b"cache").expect("write file");
@@ -288,19 +291,20 @@ mod tests {
         let cancellation = CancellationToken::new();
         let backend = RecordingBackend::default();
 
-        let report = CleanupExecutor::execute(
-            &plan,
-            &policy,
-            &action_policy,
-            &cancellation,
-            &backend,
-        )
-        .expect("execution report");
+        let report =
+            CleanupExecutor::execute(&plan, &policy, &action_policy, &cancellation, &backend)
+                .expect("execution report");
 
         assert_eq!(report.succeeded_count(), 1);
         assert_eq!(report.moved_bytes(), 0);
         assert_eq!(report.permanently_deleted_bytes(), 1);
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
         assert_eq!(backend.deleted.lock().expect("lock deleted paths").len(), 1);
 
         fs::remove_dir_all(root).expect("remove root");
