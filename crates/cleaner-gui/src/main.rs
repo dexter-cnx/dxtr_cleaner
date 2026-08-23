@@ -8,7 +8,7 @@ use std::{
 
 use cleaner_core::{
     CancellationToken, CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan,
-    ScanEvent, Scanner, UserCacheScan, XcodeScan,
+    NodeScan, ScanEvent, Scanner, UserCacheScan, XcodeScan,
 };
 use gpui::{
     App, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
@@ -58,6 +58,7 @@ struct CleanerApp {
     user_cache: Metric,
     xcode: Metric,
     homebrew: Metric,
+    node: Metric,
     permission_denied: usize,
     error: Option<String>,
     cancellation: Option<CancellationToken>,
@@ -70,6 +71,7 @@ impl CleanerApp {
             user_cache: Metric::default(),
             xcode: Metric::default(),
             homebrew: Metric::default(),
+            node: Metric::default(),
             permission_denied: 0,
             error: None,
             cancellation: None,
@@ -80,6 +82,7 @@ impl CleanerApp {
         self.user_cache = Metric::default();
         self.xcode = Metric::default();
         self.homebrew = Metric::default();
+        self.node = Metric::default();
         self.permission_denied = 0;
         self.error = None;
     }
@@ -89,6 +92,7 @@ impl CleanerApp {
             CleanupCategory::UserCache => Some(&mut self.user_cache),
             CleanupCategory::Xcode => Some(&mut self.xcode),
             CleanupCategory::Homebrew => Some(&mut self.homebrew),
+            CleanupCategory::Node => Some(&mut self.node),
             _ => None,
         }
     }
@@ -142,7 +146,8 @@ impl CleanerApp {
         let requests = vec![
             UserCacheScan::new(home.clone()).request(),
             XcodeScan::new(home.clone()).request(),
-            HomebrewScan::new(home).request(),
+            HomebrewScan::new(home.clone()).request(),
+            NodeScan::new(home).request(),
         ];
 
         let (tx, rx) = mpsc::channel::<UiMessage>();
@@ -343,7 +348,8 @@ impl Render for CleanerApp {
                             .gap_4()
                             .child(metric_card("User Cache", self.user_cache))
                             .child(metric_card("Xcode", self.xcode))
-                            .child(metric_card("Homebrew", self.homebrew)),
+                            .child(metric_card("Homebrew", self.homebrew))
+                            .child(metric_card("Node", self.node)),
                     )
                     .child(
                         div()

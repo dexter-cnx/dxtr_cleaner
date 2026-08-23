@@ -1,6 +1,4 @@
-use std::path::Path;
-
-use crate::{CleanupPlan, CleanupPlanItem, ScanItem};
+use crate::{CleanupPlan, CleanupPlanItem, ScanItem, safety::is_protected_broad_root};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct ExecutionPolicy {
@@ -41,17 +39,13 @@ impl Planner {
             if entry.item.is_symlink {
                 return Err(SafetyError::SymlinkSelected);
             }
-            if is_protected_root(&entry.item.path) {
+            if is_protected_broad_root(&entry.item.path) {
                 return Err(SafetyError::ProtectedRoot);
             }
         }
 
         Ok(())
     }
-}
-
-fn is_protected_root(path: &Path) -> bool {
-    matches!(path.to_str(), Some("/") | Some("/System") | Some("/Users"))
 }
 
 #[cfg(test)]
@@ -79,5 +73,30 @@ mod tests {
             is_symlink: true,
         }]);
         assert!(!plan.items[0].selected);
+    }
+
+    #[test]
+    fn broad_system_root_is_rejected_for_execution() {
+        let plan = CleanupPlan {
+            items: vec![CleanupPlanItem {
+                item: ScanItem {
+                    path: PathBuf::from("/Library"),
+                    category: CleanupCategory::SystemCache,
+                    bytes: 0,
+                    is_symlink: false,
+                },
+                selected: true,
+            }],
+        };
+
+        assert_eq!(
+            Planner::validate_for_execution(
+                &plan,
+                ExecutionPolicy {
+                    destructive_actions_enabled: true,
+                },
+            ),
+            Err(SafetyError::ProtectedRoot)
+        );
     }
 }

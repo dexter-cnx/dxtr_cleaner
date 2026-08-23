@@ -1,5 +1,6 @@
 mod model;
 mod planner;
+mod safety;
 mod scanner;
 mod target;
 
