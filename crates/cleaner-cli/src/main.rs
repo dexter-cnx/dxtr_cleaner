@@ -117,7 +117,11 @@ fn run_related_files(args: &[String]) -> ExitCode {
     }
 
     for application in matches {
-        println!("application\t{}\t{}", application.name, application.path.display());
+        println!(
+            "application\t{}\t{}",
+            application.name,
+            application.path.display()
+        );
         let report = platform.related_files(application);
         for candidate in report.candidates {
             println!(
