@@ -2,9 +2,9 @@
 
 ## Current state
 
-M0, M1 Smart Scan, and M2 review + Trash-only execution are complete and merged to `main`. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
+M0, M1 Smart Scan, and M2 review + Trash-only execution are complete and merged to `main`. M3.1 installed-application inventory and M3.2 bundle/team metadata are also merged. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
 
-M3 has started on `feature/m3-app-inventory`. The first slice is read-only installed-application inventory: shared frontend-neutral inventory models live in `cleaner-core`, while `cleaner-macos` discovers `.app` bundles under local, system, and user application roots. `dxtr-cleaner apps` is the CLI validation surface for the same API.
+M3.3 is implemented on `feature/m3-related-files`: related-file matching and confidence tiers remain frontend-neutral in `cleaner-core`, while `cleaner-macos` maps installed applications to read-only candidate paths under the user's Library. `dxtr-cleaner related <bundle-id>` provides a CLI validation surface for the same matcher.
 
 For a code-oriented tour of the repository, read [`CODE_WALKTHROUGH.md`](./CODE_WALKTHROUGH.md) before changing scan, cleanup, execution, GPUI, or platform-boundary code.
 
@@ -96,14 +96,37 @@ The macOS permanent-delete backend intentionally fails closed. A previous path-b
 ### M3 installed application inventory
 
 - `ApplicationInventory` is a frontend-neutral core trait
-- inventory results contain typed application location (`user`, `local`, `system`), display name, and bundle path
+- inventory results contain typed application location (`user`, `local`, `system`), display name, bundle path, and optional application metadata
 - partial traversal failures are preserved as structured warnings rather than discarding successful results
 - macOS roots are `/Applications`, `/System/Applications`, and `~/Applications`
 - nested application folders are traversed, but a discovered `.app` bundle is treated as a leaf
-- directory symlinks are never followed
+- directory symlinks, including symlinked inventory roots, are never followed
 - output is sorted deterministically for stable UI/CLI behavior and tests
 - `dxtr-cleaner apps` exercises the same Rust API without introducing GPUI-specific inventory logic
 - this slice is read-only; it adds no uninstall or mutation path
+
+### M3 application metadata
+
+- `ApplicationMetadata` remains frontend-neutral and optional
+- macOS extraction reads `CFBundleIdentifier`, `CFBundleVersion`, and `CFBundleShortVersionString` from `Contents/Info.plist`
+- signing metadata captures `TeamIdentifier` from `codesign` when available
+- unsigned apps or missing metadata do not remove the application from inventory
+- bundle identifier is the primary ownership signal for later related-file matching
+- TeamIdentifier is supporting metadata only and must never be treated as ownership evidence by itself because one team can sign multiple applications
+
+### M3 related-file matcher + confidence tiers
+
+- `RelatedFileMatcher`, `RelatedFileCandidate`, `MatchEvidence`, `MatchConfidence`, and `RelatedFileKind` live in `cleaner-core`
+- High confidence requires an exact bundle-identifier-derived path
+- High candidates currently cover Application Support, Caches, Containers, HTTPStorages, Preferences plist, and Saved Application State paths
+- Medium confidence covers bundle-identifier-prefixed `~/Library/Preferences/ByHost` entries
+- Low confidence covers exact display-name directories under Application Support and Caches
+- Medium and Low are explicitly review-only through core policy semantics
+- candidate symlinks are excluded with `symlink_metadata`
+- duplicate candidate paths retain the strongest available evidence
+- display-name evidence is never upgraded merely because a developer TeamIdentifier matches
+- matcher remains read-only; it does not create an uninstall execution plan or mutate files
+- `dxtr-cleaner related <bundle-id>` exposes the same matcher for CLI validation
 
 ### Important safety decision
 
@@ -144,7 +167,7 @@ GPUI frontend   Flutter frontend
 
 Ownership rules:
 
-- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, application inventory, and platform-native adapters.
+- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, application inventory, related-file matching, and platform-native adapters.
 - Frontends own presentation, interaction, localization, and frontend state only.
 - GPUI-specific types must not leak into core/domain APIs.
 - Cleanup and uninstall rules must not be duplicated in GPUI or future Dart code.
@@ -158,14 +181,12 @@ Windows remains a later target after the macOS flow is stable. A GPUI Windows fe
 
 Continue M3 app uninstaller in safety-first slices:
 
-1. merge installed application inventory
-2. bundle/team metadata extraction
-3. related-file matcher with confidence tiers
-4. system-app protection
-5. orphan finder
-6. only then reviewed uninstall execution
+1. merge related-file matcher + confidence tiers
+2. add system-app protection as a core policy boundary
+3. add orphan finder using installed bundle identifiers as the authoritative live-app set
+4. only then design reviewed uninstall execution
 
-Do not infer ownership of related files from display names alone. Bundle identifiers and signing/team metadata should become primary evidence in the next slices, and lower-confidence matches must remain review-only.
+Do not infer ownership of related files from display names alone. Exact bundle identifiers remain the strongest ownership evidence; lower-confidence matches stay review-only. TeamIdentifier is useful for context/disambiguation but is never sufficient ownership evidence by itself.
 
 Keep permanent deletion safety-locked until anchored/no-follow filesystem mutation is implemented and separately reviewed.
 
