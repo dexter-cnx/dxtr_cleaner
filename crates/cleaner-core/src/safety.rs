@@ -1,4 +1,7 @@
-use std::path::{Component, Path, PathBuf};
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+};
 
 const PROTECTED_BROAD_ROOTS: &[&str] = &[
     "/",
@@ -13,24 +16,36 @@ const PROTECTED_BROAD_ROOTS: &[&str] = &[
 ];
 
 pub(crate) fn is_protected_broad_root(path: &Path) -> bool {
-    let normalized = normalize_lexically(path);
-    PROTECTED_BROAD_ROOTS
-        .iter()
-        .any(|protected| normalized == Path::new(protected))
+    let candidate = resolve_for_policy(path);
+
+    PROTECTED_BROAD_ROOTS.iter().any(|protected| {
+        let protected = Path::new(protected);
+        let protected = resolve_for_policy(protected);
+        candidate == protected
+    })
 }
 
-fn normalize_lexically(path: &Path) -> PathBuf {
+fn resolve_for_policy(path: &Path) -> PathBuf {
+    match fs::canonicalize(path) {
+        Ok(resolved) => resolved,
+        Err(_) => normalize_lexically_case_insensitive(path),
+    }
+}
+
+fn normalize_lexically_case_insensitive(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
 
     for component in path.components() {
         match component {
-            Component::Prefix(prefix) => normalized.push(prefix.as_os_str()),
+            Component::Prefix(prefix) => {
+                normalized.push(prefix.as_os_str().to_string_lossy().to_lowercase())
+            }
             Component::RootDir => normalized.push(Path::new("/")),
             Component::CurDir => {}
             Component::ParentDir => {
                 normalized.pop();
             }
-            Component::Normal(part) => normalized.push(part),
+            Component::Normal(part) => normalized.push(part.to_string_lossy().to_lowercase()),
         }
     }
 
@@ -50,6 +65,13 @@ mod tests {
         assert!(!is_protected_broad_root(Path::new(
             "/Users/tester/Library/Caches"
         )));
+    }
+
+    #[test]
+    fn protects_case_variants_of_broad_roots() {
+        assert!(is_protected_broad_root(Path::new("/system")));
+        assert!(is_protected_broad_root(Path::new("/LIBRARY")));
+        assert!(is_protected_broad_root(Path::new("/users")));
     }
 
     #[test]
