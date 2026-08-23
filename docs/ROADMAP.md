@@ -31,8 +31,11 @@
 - [x] allow-list enforcement
 - [x] execution report
 - [x] cancellation
+- [x] GPUI Trash-only execution wiring
 
-Permanent delete remains an explicit core policy opt-in. The default is Trash for every category; M2 permits permanent delete only for generated/cache categories (`UserCache`, `Xcode`, `Homebrew`, `Node`) and rejects it for `SystemCache`, `Docker`, and `LargeFiles`.
+The GPUI product flow is intentionally Trash-only. It derives the execution allow-list from the typed scan requests used for the completed scan, pins that policy before review execution, runs cleanup through the shared Rust `CleanupExecutor`, exposes cooperative cancellation, and discards the stale cleanup plan after execution so another mutation requires a fresh scan.
+
+Permanent delete remains an explicit core policy capability rather than a frontend toggle. The core policy permits opt-in only for generated/cache categories (`UserCache`, `Xcode`, `Homebrew`, `Node`) and rejects it for `SystemCache`, `Docker`, and `LargeFiles`. The macOS permanent-delete backend remains safety-locked until an anchored directory-descriptor/no-follow implementation closes the ancestor-swap TOCTOU gap.
 
 ## M3 — app uninstaller
 
