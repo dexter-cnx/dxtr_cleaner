@@ -311,10 +311,7 @@ mod tests {
         fs::create_dir_all(&app_path).expect("create app");
         fs::create_dir_all(&cache_path).expect("create cache");
         let related = related_report(root);
-        let plan = UninstallPlan::build(
-            application(app_path, "com.example.app"),
-            related.clone(),
-        );
+        let plan = UninstallPlan::build(application(app_path, "com.example.app"), related.clone());
         (plan, related)
     }
 
