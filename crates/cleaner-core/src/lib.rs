@@ -10,6 +10,7 @@ mod related_files;
 mod safety;
 mod scanner;
 mod target;
+mod uninstall_plan;
 
 pub use action_policy::{
     ActionPolicyError, CategoryActionPolicy, CleanupAction, supports_permanent_delete,
@@ -39,3 +40,4 @@ pub use scanner::{
 pub use target::{
     CategoryScanTarget, HomebrewScan, NodeScan, SystemCacheScan, UserCacheScan, XcodeScan,
 };
+pub use uninstall_plan::{UninstallPlan, UninstallPlanItem, UninstallPlanItemKind};
