@@ -43,10 +43,10 @@ impl FileSystemScanner {
         if metadata.is_dir() {
             for entry in fs::read_dir(root)? {
                 let entry = entry?;
-                if let Err(error) = Self::walk(entry.path(), category, out)
-                    && error.kind() != io::ErrorKind::PermissionDenied
-                {
-                    return Err(error);
+                if let Err(error) = Self::walk(entry.path(), category, out) {
+                    if error.kind() != io::ErrorKind::PermissionDenied {
+                        return Err(error);
+                    }
                 }
             }
         }
