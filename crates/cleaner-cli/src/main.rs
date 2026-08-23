@@ -203,7 +203,9 @@ fn run_uninstall_plan(args: &[String]) -> ExitCode {
     };
 
     if env::var_os("HOME").is_none() {
-        eprintln!("cannot build uninstall plan: HOME is not set, so user applications and related files cannot be inventoried completely");
+        eprintln!(
+            "cannot build uninstall plan: HOME is not set, so user applications and related files cannot be inventoried completely"
+        );
         return ExitCode::FAILURE;
     }
 
