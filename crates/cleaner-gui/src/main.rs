@@ -1,3 +1,5 @@
+mod execution;
+
 use std::{
     env,
     path::PathBuf,
@@ -7,10 +9,11 @@ use std::{
 };
 
 use cleaner_core::{
-    CancellationToken, CategoryScanTarget, CleanupCategory, CleanupPlan, FileSystemScanner,
-    HomebrewScan, NodeScan, Planner, ScanEvent, ScanItem, Scanner, SystemCacheScan, UserCacheScan,
-    XcodeScan,
+    CancellationToken, CategoryScanTarget, CleanupCategory, CleanupPlan, ExecutionPolicy,
+    ExecutionReport, FileSystemScanner, HomebrewScan, NodeScan, Planner, ScanEvent, ScanItem,
+    ScanRequest, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
 };
+use execution::{ExecutionMessage, policy_from_requests, spawn_trash_only_execution};
 use gpui::{
     App, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
 };
@@ -42,6 +45,29 @@ impl ScanState {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionState {
+    Idle,
+    Executing,
+    Cancelling,
+    Completed,
+    Cancelled,
+    Failed,
+}
+
+impl ExecutionState {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Idle => "Not started",
+            Self::Executing => "Moving selected items to Trash…",
+            Self::Cancelling => "Cancelling cleanup…",
+            Self::Completed => "Cleanup complete",
+            Self::Cancelled => "Cleanup cancelled",
+            Self::Failed => "Cleanup failed",
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, Copy)]
 struct Metric {
     items: usize,
@@ -57,6 +83,7 @@ enum UiMessage {
 
 struct CleanerApp {
     state: ScanState,
+    execution_state: ExecutionState,
     user_cache: Metric,
     system_cache: Metric,
     xcode: Metric,
@@ -64,15 +91,21 @@ struct CleanerApp {
     node: Metric,
     permission_denied: usize,
     error: Option<String>,
+    execution_error: Option<String>,
     cancellation: Option<CancellationToken>,
+    execution_cancellation: Option<CancellationToken>,
     scanned_items: Vec<ScanItem>,
+    scan_requests: Vec<ScanRequest>,
     cleanup_plan: Option<CleanupPlan>,
+    execution_policy: Option<ExecutionPolicy>,
+    execution_report: Option<ExecutionReport>,
 }
 
 impl CleanerApp {
     fn new() -> Self {
         Self {
             state: ScanState::Idle,
+            execution_state: ExecutionState::Idle,
             user_cache: Metric::default(),
             system_cache: Metric::default(),
             xcode: Metric::default(),
@@ -80,9 +113,14 @@ impl CleanerApp {
             node: Metric::default(),
             permission_denied: 0,
             error: None,
+            execution_error: None,
             cancellation: None,
+            execution_cancellation: None,
             scanned_items: Vec::new(),
+            scan_requests: Vec::new(),
             cleanup_plan: None,
+            execution_policy: None,
+            execution_report: None,
         }
     }
 
@@ -94,8 +132,14 @@ impl CleanerApp {
         self.node = Metric::default();
         self.permission_denied = 0;
         self.error = None;
+        self.execution_error = None;
         self.scanned_items.clear();
+        self.scan_requests.clear();
         self.cleanup_plan = None;
+        self.execution_policy = None;
+        self.execution_report = None;
+        self.execution_state = ExecutionState::Idle;
+        self.execution_cancellation = None;
     }
 
     fn metric_mut(&mut self, category: CleanupCategory) -> Option<&mut Metric> {
@@ -126,23 +170,31 @@ impl CleanerApp {
                 self.state = ScanState::Completed;
                 self.cancellation = None;
                 self.cleanup_plan = Some(Planner::build(std::mem::take(&mut self.scanned_items)));
+                self.execution_policy = Some(policy_from_requests(&self.scan_requests));
             }
             UiMessage::Cancelled => {
                 self.state = ScanState::Cancelled;
                 self.cancellation = None;
                 self.scanned_items.clear();
+                self.execution_policy = None;
             }
             UiMessage::Failed(error) => {
                 self.state = ScanState::Failed;
                 self.error = Some(error);
                 self.cancellation = None;
                 self.scanned_items.clear();
+                self.execution_policy = None;
             }
         }
     }
 
     fn start_scan(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(self.state, ScanState::Scanning | ScanState::Cancelling) {
+        if matches!(self.state, ScanState::Scanning | ScanState::Cancelling)
+            || matches!(
+                self.execution_state,
+                ExecutionState::Executing | ExecutionState::Cancelling
+            )
+        {
             return;
         }
 
@@ -166,6 +218,7 @@ impl CleanerApp {
             HomebrewScan::new(home.clone()).request(),
             NodeScan::new(home).request(),
         ];
+        self.scan_requests = requests.clone();
 
         let (tx, rx) = mpsc::channel::<UiMessage>();
         let worker_cancellation = cancellation.clone();
@@ -253,6 +306,96 @@ impl CleanerApp {
         cx.notify();
     }
 
+    fn start_cleanup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(
+            self.execution_state,
+            ExecutionState::Executing | ExecutionState::Cancelling
+        ) {
+            return;
+        }
+
+        let Some(plan) = self.cleanup_plan.clone() else {
+            return;
+        };
+        if plan.selected_count() == 0 {
+            return;
+        }
+        let Some(policy) = self.execution_policy.clone() else {
+            self.execution_state = ExecutionState::Failed;
+            self.execution_error = Some("execution policy is unavailable".to_string());
+            cx.notify();
+            return;
+        };
+
+        self.execution_state = ExecutionState::Executing;
+        self.execution_error = None;
+        self.execution_report = None;
+
+        let cancellation = CancellationToken::new();
+        self.execution_cancellation = Some(cancellation.clone());
+        let rx = spawn_trash_only_execution(plan, policy, cancellation);
+        let entity = cx.entity();
+
+        window
+            .spawn(cx, async move |cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(50))
+                        .await;
+
+                    match rx.try_recv() {
+                        Ok(ExecutionMessage::Completed(report)) => {
+                            entity.update(cx, |this, cx| {
+                                this.execution_state = if report.cancelled {
+                                    ExecutionState::Cancelled
+                                } else {
+                                    ExecutionState::Completed
+                                };
+                                this.execution_report = Some(report);
+                                this.execution_cancellation = None;
+                                this.cleanup_plan = None;
+                                cx.notify();
+                            });
+                            break;
+                        }
+                        Ok(ExecutionMessage::Failed(error)) => {
+                            entity.update(cx, |this, cx| {
+                                this.execution_state = ExecutionState::Failed;
+                                this.execution_error = Some(error);
+                                this.execution_cancellation = None;
+                                cx.notify();
+                            });
+                            break;
+                        }
+                        Err(TryRecvError::Empty) => {}
+                        Err(TryRecvError::Disconnected) => {
+                            entity.update(cx, |this, cx| {
+                                this.execution_state = ExecutionState::Failed;
+                                this.execution_error =
+                                    Some("cleanup worker disconnected".to_string());
+                                this.execution_cancellation = None;
+                                cx.notify();
+                            });
+                            break;
+                        }
+                    }
+                }
+            })
+            .detach();
+
+        cx.notify();
+    }
+
+    fn cancel_execution(&mut self, cx: &mut Context<Self>) {
+        let Some(cancellation) = &self.execution_cancellation else {
+            return;
+        };
+
+        cancellation.cancel();
+        self.execution_state = ExecutionState::Cancelling;
+        cx.notify();
+    }
+
     fn set_all_review_items(&mut self, selected: bool, cx: &mut Context<Self>) {
         if let Some(plan) = &mut self.cleanup_plan {
             plan.set_all_selected(selected);
@@ -263,8 +406,12 @@ impl CleanerApp {
 
 impl Render for CleanerApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let is_active = matches!(self.state, ScanState::Scanning | ScanState::Cancelling);
-        let primary_label = if is_active {
+        let scan_active = matches!(self.state, ScanState::Scanning | ScanState::Cancelling);
+        let execution_active = matches!(
+            self.execution_state,
+            ExecutionState::Executing | ExecutionState::Cancelling
+        );
+        let primary_label = if scan_active {
             self.state.label()
         } else {
             "Start Smart Scan"
@@ -278,6 +425,22 @@ impl Render for CleanerApp {
                 self.permission_denied
             ),
             None => self.state.label().to_string(),
+        };
+
+        let execution_status = match (&self.execution_report, &self.execution_error) {
+            (Some(report), _) => {
+                let cancelled = if report.cancelled { " · cancelled" } else { "" };
+                format!(
+                    "{} · {} moved to Trash · {} failed · {}{}",
+                    self.execution_state.label(),
+                    report.succeeded_count(),
+                    report.failed_count(),
+                    format_bytes(report.moved_bytes()),
+                    cancelled
+                )
+            }
+            (None, Some(error)) => format!("{} · {error}", self.execution_state.label()),
+            _ => self.execution_state.label().to_string(),
         };
 
         let review_panel = self.cleanup_plan.as_ref().map(|plan| {
@@ -385,8 +548,48 @@ impl Render for CleanerApp {
                 .when(hidden_count > 0, |panel| {
                     panel.child(
                         div().text_color(rgb(0xa9afb8)).child(format!(
-                            "+ {hidden_count} more item(s) in this plan; full per-item controls follow in M2 execution work"
+                            "+ {hidden_count} more item(s) in this plan"
                         )),
+                    )
+                })
+                .when(selected_count > 0, |panel| {
+                    panel.child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
+                            .child(
+                                div()
+                                    .id("execute-trash")
+                                    .px_5()
+                                    .py_3()
+                                    .rounded_lg()
+                                    .bg(rgb(0x4f7cff))
+                                    .cursor_pointer()
+                                    .child(if execution_active {
+                                        "Moving to Trash…"
+                                    } else {
+                                        "Move selected to Trash"
+                                    })
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.start_cleanup(window, cx);
+                                    })),
+                            )
+                            .when(execution_active, |row| {
+                                row.child(
+                                    div()
+                                        .id("cancel-cleanup")
+                                        .px_5()
+                                        .py_3()
+                                        .rounded_lg()
+                                        .bg(rgb(0x2b303a))
+                                        .cursor_pointer()
+                                        .child("Cancel cleanup")
+                                        .on_click(cx.listener(|this, _, _, cx| {
+                                            this.cancel_execution(cx);
+                                        })),
+                                )
+                            }),
                     )
                 })
         });
@@ -417,7 +620,7 @@ impl Render for CleanerApp {
                                     .rounded_full()
                                     .bg(rgb(0x173624))
                                     .text_color(rgb(0x83e6a2))
-                                    .child("Safe mode · review only"),
+                                    .child("Safe mode · Trash only"),
                             ),
                     )
                     .child(
@@ -460,7 +663,7 @@ impl Render for CleanerApp {
                                                 }
                                             })),
                                     )
-                                    .when(is_active, |row| {
+                                    .when(scan_active, |row| {
                                         row.child(
                                             div()
                                                 .id("cancel")
@@ -488,6 +691,28 @@ impl Render for CleanerApp {
                             .child(metric_card("Node", self.node)),
                     )
                     .when_some(review_panel, |page, panel| page.child(panel))
+                    .when(
+                        self.execution_state != ExecutionState::Idle,
+                        |page| {
+                            page.child(
+                                div()
+                                    .p_5()
+                                    .rounded_xl()
+                                    .bg(rgb(0x171a20))
+                                    .border_1()
+                                    .border_color(rgb(0x262a33))
+                                    .flex()
+                                    .flex_col()
+                                    .gap_2()
+                                    .child(div().text_lg().child("Execution report"))
+                                    .child(
+                                        div()
+                                            .text_color(rgb(0xa9afb8))
+                                            .child(execution_status),
+                                    ),
+                            )
+                        },
+                    )
                     .child(
                         div()
                             .p_5()
@@ -496,7 +721,7 @@ impl Render for CleanerApp {
                             .border_1()
                             .border_color(rgb(0x262a33))
                             .child(
-                                "M2 review is enabled. Destructive cleanup remains disabled until execution safety policy lands.",
+                                "Cleanup execution is Trash-only. Permanent delete remains safety-locked in the macOS backend.",
                             ),
                     ),
             )
