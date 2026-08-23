@@ -397,6 +397,13 @@ impl CleanerApp {
     }
 
     fn set_all_review_items(&mut self, selected: bool, cx: &mut Context<Self>) {
+        if matches!(
+            self.execution_state,
+            ExecutionState::Executing | ExecutionState::Cancelling
+        ) {
+            return;
+        }
+
         if let Some(plan) = &mut self.cleanup_plan {
             plan.set_all_selected(selected);
             cx.notify();
@@ -511,37 +518,39 @@ impl Render for CleanerApp {
                             format_bytes(selected_bytes)
                         ))),
                 )
-                .child(
-                    div()
-                        .flex()
-                        .gap_2()
-                        .child(
-                            div()
-                                .id("select-all")
-                                .px_3()
-                                .py_2()
-                                .rounded_md()
-                                .bg(rgb(0x2b303a))
-                                .cursor_pointer()
-                                .child("Select all safe items")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.set_all_review_items(true, cx);
-                                })),
-                        )
-                        .child(
-                            div()
-                                .id("deselect-all")
-                                .px_3()
-                                .py_2()
-                                .rounded_md()
-                                .bg(rgb(0x2b303a))
-                                .cursor_pointer()
-                                .child("Deselect all")
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.set_all_review_items(false, cx);
-                                })),
-                        ),
-                )
+                .when(!execution_active, |panel| {
+                    panel.child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .id("select-all")
+                                    .px_3()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(rgb(0x2b303a))
+                                    .cursor_pointer()
+                                    .child("Select all safe items")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.set_all_review_items(true, cx);
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .id("deselect-all")
+                                    .px_3()
+                                    .py_2()
+                                    .rounded_md()
+                                    .bg(rgb(0x2b303a))
+                                    .cursor_pointer()
+                                    .child("Deselect all")
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.set_all_review_items(false, cx);
+                                    })),
+                            ),
+                    )
+                })
                 .children(rows)
                 .when(hidden_count > 0, |panel| {
                     panel.child(
@@ -550,29 +559,27 @@ impl Render for CleanerApp {
                             .child(format!("+ {hidden_count} more item(s) in this plan")),
                     )
                 })
-                .when(selected_count > 0, |panel| {
+                .when(selected_count > 0 || execution_active, |panel| {
                     panel.child(
                         div()
                             .flex()
                             .items_center()
                             .gap_3()
-                            .child(
-                                div()
-                                    .id("execute-trash")
-                                    .px_5()
-                                    .py_3()
-                                    .rounded_lg()
-                                    .bg(rgb(0x4f7cff))
-                                    .cursor_pointer()
-                                    .child(if execution_active {
-                                        "Moving to Trash…"
-                                    } else {
-                                        "Move selected to Trash"
-                                    })
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.start_cleanup(window, cx);
-                                    })),
-                            )
+                            .when(selected_count > 0 && !execution_active, |row| {
+                                row.child(
+                                    div()
+                                        .id("execute-trash")
+                                        .px_5()
+                                        .py_3()
+                                        .rounded_lg()
+                                        .bg(rgb(0x4f7cff))
+                                        .cursor_pointer()
+                                        .child("Move selected to Trash")
+                                        .on_click(cx.listener(|this, _, window, cx| {
+                                            this.start_cleanup(window, cx);
+                                        })),
+                                )
+                            })
                             .when(execution_active, |row| {
                                 row.child(
                                     div()
