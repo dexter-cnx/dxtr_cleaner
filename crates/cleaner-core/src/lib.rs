@@ -10,6 +10,7 @@ mod related_files;
 mod safety;
 mod scanner;
 mod target;
+mod uninstall_execution;
 mod uninstall_plan;
 
 pub use action_policy::{
@@ -39,5 +40,9 @@ pub use scanner::{
 };
 pub use target::{
     CategoryScanTarget, HomebrewScan, NodeScan, SystemCacheScan, UserCacheScan, XcodeScan,
+};
+pub use uninstall_execution::{
+    RelatedFileExecutionRoot, UninstallExecutionError, UninstallExecutionPolicy,
+    UninstallExecutionRecord, UninstallExecutionReport, UninstallExecutor,
 };
 pub use uninstall_plan::{UninstallPlan, UninstallPlanItem, UninstallPlanItemKind};
