@@ -200,7 +200,8 @@ impl Scanner for FileSystemScanner {
                 break;
             }
 
-            if root.exists() && !Self::walk(root.clone(), request, cancellation, sink, &mut items)? {
+            if root.exists() && !Self::walk(root.clone(), request, cancellation, sink, &mut items)?
+            {
                 completed = false;
                 break;
             }
