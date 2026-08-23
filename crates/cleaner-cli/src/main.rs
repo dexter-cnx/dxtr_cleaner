@@ -168,10 +168,18 @@ fn run_orphan_finder() -> ExitCode {
         );
     }
     for issue in &inventory.issues {
-        eprintln!("inventory warning: {}: {}", issue.path.display(), issue.message);
+        eprintln!(
+            "inventory warning: {}: {}",
+            issue.path.display(),
+            issue.message
+        );
     }
     for issue in &report.issues {
-        eprintln!("orphan warning: {}: {}", issue.path.display(), issue.message);
+        eprintln!(
+            "orphan warning: {}: {}",
+            issue.path.display(),
+            issue.message
+        );
     }
 
     println!("orphans: {}", report.candidates.len());
