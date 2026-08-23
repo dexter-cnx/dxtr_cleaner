@@ -131,9 +131,36 @@ fn collect_applications(
     is_root: bool,
     report: &mut ApplicationInventoryReport,
 ) {
+    let metadata = match fs::symlink_metadata(directory) {
+        Ok(metadata) => metadata,
+        Err(error) if is_root && error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            report.issues.push(ApplicationInventoryIssue::new(
+                directory.to_path_buf(),
+                error.to_string(),
+            ));
+            return;
+        }
+    };
+
+    if metadata.file_type().is_symlink() {
+        report.issues.push(ApplicationInventoryIssue::new(
+            directory.to_path_buf(),
+            "application inventory directory is a symlink and was skipped",
+        ));
+        return;
+    }
+
+    if !metadata.is_dir() {
+        report.issues.push(ApplicationInventoryIssue::new(
+            directory.to_path_buf(),
+            "application inventory path is not a directory",
+        ));
+        return;
+    }
+
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
-        Err(error) if is_root && error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
             report.issues.push(ApplicationInventoryIssue::new(
                 directory.to_path_buf(),
@@ -296,6 +323,29 @@ mod tests {
         assert!(report.issues.is_empty());
 
         fs::remove_dir_all(root).expect("temp root must be removed");
+        fs::remove_dir_all(outside).expect("outside temp root must be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inventory_rejects_symlinked_roots() {
+        use std::os::unix::fs::symlink;
+
+        let parent = temp_root("inventory-symlink-root");
+        let outside = temp_root("inventory-symlink-root-outside");
+        fs::create_dir_all(outside.join("Escaped.app/Contents"))
+            .expect("outside app fixture must be created");
+        let linked_root = parent.join("Applications");
+        symlink(&outside, &linked_root).expect("root symlink fixture must be created");
+
+        let report = inventory_roots(&[(ApplicationLocation::User, linked_root.clone())]);
+
+        assert!(report.applications.is_empty());
+        assert_eq!(report.issues.len(), 1);
+        assert_eq!(report.issues[0].path, linked_root);
+        assert!(report.issues[0].message.contains("symlink"));
+
+        fs::remove_dir_all(parent).expect("temp root must be removed");
         fs::remove_dir_all(outside).expect("outside temp root must be removed");
     }
 }
