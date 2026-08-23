@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use cleaner_core::TrashBackend;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionStatus {
     Unknown,
@@ -56,8 +58,8 @@ impl MacPlatform for SystemMacPlatform {
         }
     }
 
-    fn move_to_trash(&self, _path: &Path) -> Result<(), String> {
-        Err("M0 safety lock: trash execution is not implemented".into())
+    fn move_to_trash(&self, path: &Path) -> Result<(), String> {
+        move_path_to_trash(path)
     }
 
     fn installed_application_paths(&self) -> Result<Vec<PathBuf>, String> {
@@ -67,6 +69,38 @@ impl MacPlatform for SystemMacPlatform {
         }
         Ok(roots)
     }
+}
+
+impl TrashBackend for SystemMacPlatform {
+    fn move_to_trash(&self, path: &Path) -> Result<(), String> {
+        MacPlatform::move_to_trash(self, path)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn move_path_to_trash(path: &Path) -> Result<(), String> {
+    let status = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg("on run argv")
+        .arg("-e")
+        .arg("tell application \"Finder\" to delete POSIX file (item 1 of argv)")
+        .arg("-e")
+        .arg("end run")
+        .arg(path)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("move to Trash failed with status {status}"))
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn move_path_to_trash(path: &Path) -> Result<(), String> {
+    let _ = path;
+    Err("macOS only".into())
 }
 
 #[cfg(target_os = "macos")]
