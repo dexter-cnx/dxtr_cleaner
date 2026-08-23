@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
-use cleaner_core::TrashBackend;
+use cleaner_core::{PermanentDeleteBackend, TrashBackend};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionStatus {
@@ -14,6 +17,7 @@ pub trait MacPlatform {
     fn open_full_disk_access_settings(&self) -> Result<(), String>;
     fn reveal_in_finder(&self, path: &Path) -> Result<(), String>;
     fn move_to_trash(&self, path: &Path) -> Result<(), String>;
+    fn permanent_delete(&self, path: &Path) -> Result<(), String>;
     fn installed_application_paths(&self) -> Result<Vec<PathBuf>, String>;
 }
 
@@ -62,6 +66,10 @@ impl MacPlatform for SystemMacPlatform {
         move_path_to_trash(path)
     }
 
+    fn permanent_delete(&self, path: &Path) -> Result<(), String> {
+        permanent_delete_path(path)
+    }
+
     fn installed_application_paths(&self) -> Result<Vec<PathBuf>, String> {
         let mut roots = vec![PathBuf::from("/Applications")];
         if let Some(home) = std::env::var_os("HOME") {
@@ -74,6 +82,25 @@ impl MacPlatform for SystemMacPlatform {
 impl TrashBackend for SystemMacPlatform {
     fn move_to_trash(&self, path: &Path) -> Result<(), String> {
         MacPlatform::move_to_trash(self, path)
+    }
+}
+
+impl PermanentDeleteBackend for SystemMacPlatform {
+    fn permanent_delete(&self, path: &Path) -> Result<(), String> {
+        MacPlatform::permanent_delete(self, path)
+    }
+}
+
+fn permanent_delete_path(path: &Path) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() {
+        return Err("refusing to permanently delete a symlink".into());
+    }
+
+    if metadata.is_dir() {
+        fs::remove_dir_all(path).map_err(|error| error.to_string())
+    } else {
+        fs::remove_file(path).map_err(|error| error.to_string())
     }
 }
 
