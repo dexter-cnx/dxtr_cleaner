@@ -1,18 +1,25 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
 use cleaner_core::{
-    CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan, NodeScan, Planner,
-    ScanSummary, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
+    ApplicationInventory, CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan,
+    NodeScan, Planner, ScanSummary, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
 };
+use cleaner_macos::SystemMacPlatform;
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
-    if args.first().map(String::as_str) != Some("scan") {
-        print_usage();
-        return ExitCode::SUCCESS;
+    match args.first().map(String::as_str) {
+        Some("scan") => run_scan(&args),
+        Some("apps") => run_app_inventory(),
+        _ => {
+            print_usage();
+            ExitCode::SUCCESS
+        }
     }
+}
 
-    let category = match parse_category(&args) {
+fn run_scan(args: &[String]) -> ExitCode {
+    let category = match parse_category(args) {
         Ok(category) => category,
         Err(error) => {
             eprintln!("{error}");
@@ -39,7 +46,7 @@ fn main() -> ExitCode {
             println!("items: {}", summary.item_count);
             println!("bytes: {}", summary.total_bytes);
             println!("selected bytes: {}", plan.selected_bytes());
-            println!("mode: dry-run (M1 destructive execution disabled)");
+            println!("mode: dry-run");
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -47,6 +54,26 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn run_app_inventory() -> ExitCode {
+    let report = SystemMacPlatform.inventory();
+
+    for application in &report.applications {
+        println!(
+            "{}\t{}\t{}",
+            application.location.label(),
+            application.name,
+            application.path.display()
+        );
+    }
+    for issue in &report.issues {
+        eprintln!("warning: {}: {}", issue.path.display(), issue.message);
+    }
+
+    println!("applications: {}", report.applications.len());
+    println!("warnings: {}", report.issues.len());
+    ExitCode::SUCCESS
 }
 
 fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
@@ -99,6 +126,7 @@ fn scan_request_with_home(
 
 fn print_usage() {
     println!("dxtr-cleaner scan [--category user|system|dev|brew|node]");
+    println!("dxtr-cleaner apps");
 }
 
 #[cfg(test)]
