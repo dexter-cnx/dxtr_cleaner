@@ -2,7 +2,8 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use cleaner_core::{
     ApplicationInventory, CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan,
-    NodeScan, Planner, ScanSummary, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
+    NodeScan, Planner, RelatedFileMatcher, ScanSummary, Scanner, SystemCacheScan, UserCacheScan,
+    XcodeScan,
 };
 use cleaner_macos::SystemMacPlatform;
 
@@ -11,6 +12,7 @@ fn main() -> ExitCode {
     match args.first().map(String::as_str) {
         Some("scan") => run_scan(&args),
         Some("apps") => run_app_inventory(),
+        Some("related") => run_related_files(&args),
         _ => {
             print_usage();
             ExitCode::SUCCESS
@@ -92,6 +94,49 @@ fn run_app_inventory() -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn run_related_files(args: &[String]) -> ExitCode {
+    let Some(bundle_identifier) = args.get(1) else {
+        eprintln!("related requires a bundle identifier");
+        print_usage();
+        return ExitCode::FAILURE;
+    };
+
+    let platform = SystemMacPlatform;
+    let inventory = platform.inventory();
+    let matches: Vec<_> = inventory
+        .applications
+        .iter()
+        .filter(|application| {
+            application.metadata.bundle_identifier.as_deref() == Some(bundle_identifier.as_str())
+        })
+        .collect();
+
+    if matches.is_empty() {
+        eprintln!("no installed application found for bundle identifier: {bundle_identifier}");
+        return ExitCode::FAILURE;
+    }
+
+    for application in matches {
+        println!(
+            "application\t{}\t{}",
+            application.name,
+            application.path.display()
+        );
+        let report = platform.related_files(application);
+        for candidate in report.candidates {
+            println!(
+                "{}\t{}\t{}\treview_only={}",
+                candidate.confidence.label(),
+                candidate.kind.label(),
+                candidate.path.display(),
+                candidate.confidence.is_review_only()
+            );
+        }
+    }
+
+    ExitCode::SUCCESS
+}
+
 fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
     let Some(index) = args.iter().position(|arg| arg == "--category") else {
         return Ok(CleanupCategory::UserCache);
@@ -143,6 +188,7 @@ fn scan_request_with_home(
 fn print_usage() {
     println!("dxtr-cleaner scan [--category user|system|dev|brew|node]");
     println!("dxtr-cleaner apps");
+    println!("dxtr-cleaner related <bundle-id>");
 }
 
 #[cfg(test)]
