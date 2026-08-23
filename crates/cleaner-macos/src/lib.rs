@@ -26,11 +26,9 @@ impl MacPlatform for SystemMacPlatform {
     fn open_full_disk_access_settings(&self) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            std::process::Command::new("open")
-                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
-                .status()
-                .map_err(|error| error.to_string())?;
-            Ok(())
+            run_open([
+                "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
+            ])
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -41,12 +39,17 @@ impl MacPlatform for SystemMacPlatform {
     fn reveal_in_finder(&self, path: &Path) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            std::process::Command::new("open")
+            let status = std::process::Command::new("open")
                 .arg("-R")
                 .arg(path)
                 .status()
                 .map_err(|error| error.to_string())?;
-            Ok(())
+
+            if status.success() {
+                Ok(())
+            } else {
+                Err(format!("open -R failed with status {status}"))
+            }
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -65,5 +68,19 @@ impl MacPlatform for SystemMacPlatform {
             roots.push(PathBuf::from(home).join("Applications"));
         }
         Ok(roots)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn run_open<const N: usize>(args: [&str; N]) -> Result<(), String> {
+    let status = std::process::Command::new("open")
+        .args(args)
+        .status()
+        .map_err(|error| error.to_string())?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("open failed with status {status}"))
     }
 }
