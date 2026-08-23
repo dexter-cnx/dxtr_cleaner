@@ -1,8 +1,11 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use crate::{
-    safety::is_protected_broad_root, ApplicationLocation, ApplicationProtectionPolicy,
-    CancellationToken, InstalledApplication, TrashBackend, UninstallPlan, UninstallPlanItemKind,
+    ApplicationLocation, ApplicationProtectionPolicy, CancellationToken, InstalledApplication,
+    TrashBackend, UninstallPlan, UninstallPlanItemKind, safety::is_protected_broad_root,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -31,11 +34,17 @@ pub struct UninstallExecutionReport {
 
 impl UninstallExecutionReport {
     pub fn succeeded_count(&self) -> usize {
-        self.records.iter().filter(|record| record.result.is_ok()).count()
+        self.records
+            .iter()
+            .filter(|record| record.result.is_ok())
+            .count()
     }
 
     pub fn failed_count(&self) -> usize {
-        self.records.iter().filter(|record| record.result.is_err()).count()
+        self.records
+            .iter()
+            .filter(|record| record.result.is_err())
+            .count()
     }
 }
 
@@ -95,7 +104,8 @@ impl UninstallExecutionPolicy {
 
         // Move related data first and the required application bundle last. If execution is
         // cancelled part-way through, leaving the app installed is safer than removing it first.
-        pinned_items.sort_by_key(|item| matches!(item.kind, UninstallPlanItemKind::ApplicationBundle));
+        pinned_items
+            .sort_by_key(|item| matches!(item.kind, UninstallPlanItemKind::ApplicationBundle));
         let selected_paths = pinned_items.iter().map(|item| item.path.clone()).collect();
 
         Ok(Self {
@@ -202,8 +212,8 @@ fn validate_and_canonicalize(
         ));
     }
 
-    let canonical_path =
-        fs::canonicalize(path).map_err(|_| UninstallExecutionError::PathChanged(path.to_path_buf()))?;
+    let canonical_path = fs::canonicalize(path)
+        .map_err(|_| UninstallExecutionError::PathChanged(path.to_path_buf()))?;
     if is_protected_broad_root(&canonical_path) {
         return Err(UninstallExecutionError::ProtectedRoot(canonical_path));
     }
@@ -220,8 +230,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        ApplicationMetadata, MatchConfidence, MatchEvidence, RelatedFileCandidate,
-        RelatedFileKind, RelatedFileReport,
+        ApplicationMetadata, MatchConfidence, MatchEvidence, RelatedFileCandidate, RelatedFileKind,
+        RelatedFileReport,
     };
 
     #[derive(Default)]
@@ -231,7 +241,10 @@ mod tests {
 
     impl TrashBackend for RecordingTrash {
         fn move_to_trash(&self, path: &Path) -> Result<(), String> {
-            self.paths.lock().expect("trash lock").push(path.to_path_buf());
+            self.paths
+                .lock()
+                .expect("trash lock")
+                .push(path.to_path_buf());
             Ok(())
         }
     }
@@ -354,8 +367,14 @@ mod tests {
 
         assert_eq!(report.succeeded_count(), 2);
         let paths = backend.paths.lock().expect("trash lock");
-        assert_eq!(paths[0], fs::canonicalize(root.join("com.example.app")).unwrap());
-        assert_eq!(paths[1], fs::canonicalize(root.join("Example.app")).unwrap());
+        assert_eq!(
+            paths[0],
+            fs::canonicalize(root.join("com.example.app")).unwrap()
+        );
+        assert_eq!(
+            paths[1],
+            fs::canonicalize(root.join("Example.app")).unwrap()
+        );
         fs::remove_dir_all(root).expect("remove temp root");
     }
 }
