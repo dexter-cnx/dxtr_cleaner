@@ -1,4 +1,7 @@
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use cleaner_core::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
@@ -87,10 +90,16 @@ impl ApplicationInventory for SystemMacPlatform {
         {
             let mut roots = vec![
                 (ApplicationLocation::Local, PathBuf::from("/Applications")),
-                (ApplicationLocation::System, PathBuf::from("/System/Applications")),
+                (
+                    ApplicationLocation::System,
+                    PathBuf::from("/System/Applications"),
+                ),
             ];
             if let Some(home) = std::env::var_os("HOME") {
-                roots.push((ApplicationLocation::User, PathBuf::from(home).join("Applications")));
+                roots.push((
+                    ApplicationLocation::User,
+                    PathBuf::from(home).join("Applications"),
+                ));
             }
             inventory_roots(&roots)
         }
@@ -258,8 +267,7 @@ mod tests {
             .expect("nested app fixture must be created");
         fs::create_dir_all(root.join("Direct.app/Contents"))
             .expect("direct app fixture must be created");
-        fs::create_dir_all(root.join("NotAnApp/Child"))
-            .expect("non-app fixture must be created");
+        fs::create_dir_all(root.join("NotAnApp/Child")).expect("non-app fixture must be created");
 
         let report = inventory_roots(&[(ApplicationLocation::Local, root.clone())]);
 
@@ -280,8 +288,7 @@ mod tests {
         let outside = temp_root("inventory-symlink-outside");
         fs::create_dir_all(outside.join("Escaped.app/Contents"))
             .expect("outside app fixture must be created");
-        symlink(&outside, root.join("Linked"))
-            .expect("directory symlink fixture must be created");
+        symlink(&outside, root.join("Linked")).expect("directory symlink fixture must be created");
 
         let report = inventory_roots(&[(ApplicationLocation::Local, root.clone())]);
 
