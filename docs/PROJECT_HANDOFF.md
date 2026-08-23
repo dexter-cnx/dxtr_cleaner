@@ -4,7 +4,7 @@
 
 M0 and M1 Smart Scan are complete and merged to `main`.
 
-M2 core execution safety and execution engine are complete through PR #9. The active M2 branch `feature/m2-action-policy` adds category-scoped cleanup action policy and guarded permanent-delete support. Destructive actions are still not exposed from the GPUI frontend; the next product-facing step is wiring the reviewed cleanup plan to the shared executor without moving policy into the UI.
+M2 core execution safety, execution engine, and category action policy are complete. The active branch `feature/m2-gpui-execution` wires the reviewed cleanup plan into the GPUI product flow using Trash-only execution. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
 
 ### Implemented foundation
 
@@ -15,6 +15,7 @@ M2 core execution safety and execution engine are complete through PR #9. The ac
 - `cleaner-cli` dry-run scan command
 - `cleaner-gui` GPUI Smart Care shell
 - CI and local `make prepush` quality gates
+- development-branch auto-format workflow using real `cargo fmt`
 - architecture and roadmap docs
 
 ### M1 scan engine
@@ -49,9 +50,9 @@ M2 core execution safety and execution engine are complete through PR #9. The ac
 - GPUI shows cleanup-plan totals and review rows with path, size, and selection/protection state
 - GPUI supports select-all-safe-items and deselect-all controls
 - a new scan replaces the previous plan rather than carrying stale selections forward
-- `ExecutionPolicy` keeps destructive execution opt-in and pins category-scoped allow-list roots
+- `ExecutionPolicy` keeps mutation opt-in and pins category-scoped allow-list roots
 - execution-time revalidation uses `symlink_metadata` and canonicalization immediately before each mutation
-- allow-list roots retain their pinned canonical identity and fail closed if the root is replaced or redirected
+- allow-list roots retain their pinned canonical path and fail closed if the root is replaced by a symlink or redirected
 - broad protected roots remain rejected
 - `CleanupExecutor` returns structured per-item execution records and preserves partial success when a later item fails safety revalidation
 - cooperative execution cancellation uses the shared `CancellationToken`
@@ -62,7 +63,7 @@ M2 core execution safety and execution engine are complete through PR #9. The ac
 
 The default cleanup action for every category is `MoveToTrash`.
 
-Permanent delete requires explicit core-policy opt-in and is only eligible for clearly generated/cache categories:
+Permanent delete requires explicit core-policy opt-in and is only policy-eligible for clearly generated/cache categories:
 
 - `UserCache`
 - `Xcode`
@@ -75,15 +76,26 @@ Permanent delete is rejected for the more sensitive or ambiguous categories:
 - `Docker`
 - `LargeFiles`
 
-The frontend must never decide this policy itself. GPUI and any future Flutter frontend consume the core action decision.
+The frontend must never decide this policy itself. GPUI and any future Flutter frontend consume core behavior rather than duplicating category rules.
 
-`cleaner-macos` provides a permanent-delete backend for already revalidated canonical paths. It performs a final symlink check before `remove_file` / `remove_dir_all`.
+The macOS permanent-delete backend intentionally fails closed. A previous path-based implementation was removed because ancestor replacement between validation and mutation creates a TOCTOU escape. Permanent deletion must not be enabled until mutation can be performed relative to an anchored directory descriptor with no-follow semantics.
+
+### M2 GPUI execution flow
+
+- GPUI retains the exact typed `ScanRequest` values used by the completed Smart Scan
+- when scanning completes, GPUI builds an `ExecutionPolicy` allow-list from those scan roots rather than arbitrary UI paths
+- cleanup is always launched through `CleanupExecutor`
+- GPUI passes `CategoryActionPolicy::trash_only()` and therefore cannot request permanent delete
+- cleanup runs on a worker thread and keeps the GPUI event loop responsive
+- cleanup cancellation uses a dedicated shared `CancellationToken`
+- the UI displays execution completion/cancellation/failure status, moved bytes, and per-run success/failure counts
+- after any completed execution the cleanup plan is discarded, forcing a fresh scan before another mutation and avoiding stale-plan reuse
 
 ### Important safety decision
 
-`ExecutionPolicy::default()` still disables destructive actions. A caller must explicitly construct an enabled execution policy with pinned allow-list roots before `CleanupExecutor` performs any mutation.
+`ExecutionPolicy::default()` disables mutation. A caller must explicitly construct an enabled execution policy with pinned allow-list roots before `CleanupExecutor` performs any mutation.
 
-The GPUI frontend does not yet expose the destructive execution button, so users cannot trigger Trash/permanent-delete operations from the current UI until the final M2 wiring lands.
+GPUI now exposes only **Move selected to Trash**. It does not expose permanent deletion. The product badge explicitly states `Safe mode · Trash only`.
 
 Protected broad roots are centralized in `cleaner-core` and shared by scan validation and execution validation. Descendant paths such as `/Library/Caches` remain eligible for explicitly defined scanners while broad roots such as `/`, `/System`, and `/Library` are rejected.
 
@@ -130,16 +142,16 @@ Windows remains a later target after the macOS flow is stable. A GPUI Windows fe
 
 ## Next step
 
-Finish M2 by wiring the GPUI reviewed cleanup plan to `CleanupExecutor` with:
+After the GPUI execution PR is merged, M2 is complete and work can proceed to M3 app uninstaller in safety-first slices:
 
-1. an explicit destructive-action confirmation state
-2. core-generated `ExecutionPolicy` / allow-list roots from the typed scan targets rather than arbitrary UI paths
-3. Trash-first presentation by default
-4. permanent-delete UI only where core policy exposes it
-5. progress/cancellation and final execution report presentation
-6. no duplicated safety or category policy in GPUI
+1. installed application inventory
+2. bundle/team metadata extraction
+3. related-file matcher with confidence tiers
+4. system-app protection
+5. orphan finder
+6. only then reviewed uninstall execution
 
-After that, proceed to M3 app uninstaller.
+Keep permanent deletion safety-locked until anchored/no-follow filesystem mutation is implemented and separately reviewed.
 
 ## Validation
 
