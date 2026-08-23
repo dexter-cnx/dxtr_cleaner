@@ -38,6 +38,10 @@ impl CategoryScanTarget for UserCacheScan {
     fn roots(&self) -> Vec<PathBuf> {
         vec![self.home.join("Library/Caches")]
     }
+
+    fn excluded_roots(&self) -> Vec<PathBuf> {
+        vec![self.home.join("Library/Caches/Homebrew")]
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -114,6 +118,10 @@ mod tests {
         let user = UserCacheScan::new(home.clone()).request();
         assert_eq!(user.category, CleanupCategory::UserCache);
         assert_eq!(user.roots, vec![home.join("Library/Caches")]);
+        assert_eq!(
+            user.excluded_roots,
+            vec![home.join("Library/Caches/Homebrew")]
+        );
 
         let xcode = XcodeScan::new(home.clone()).request();
         assert_eq!(xcode.category, CleanupCategory::Xcode);
