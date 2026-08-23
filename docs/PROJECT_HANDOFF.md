@@ -6,6 +6,8 @@ M0 and M1 Smart Scan are complete and merged to `main`.
 
 M2 core execution safety, execution engine, and category action policy are complete. The active branch `feature/m2-gpui-execution` wires the reviewed cleanup plan into the GPUI product flow using Trash-only execution. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
 
+For a code-oriented tour of the repository, read [`CODE_WALKTHROUGH.md`](./CODE_WALKTHROUGH.md) before changing scan, cleanup, execution, GPUI, or platform-boundary code.
+
 ### Implemented foundation
 
 - Rust workspace with four crates
@@ -16,7 +18,7 @@ M2 core execution safety, execution engine, and category action policy are compl
 - `cleaner-gui` GPUI Smart Care shell
 - CI and local `make prepush` quality gates
 - development-branch auto-format workflow using real `cargo fmt`
-- architecture and roadmap docs
+- architecture, roadmap, handoff, and code-walkthrough docs
 
 ### M1 scan engine
 
