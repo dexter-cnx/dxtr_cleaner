@@ -5,6 +5,12 @@ use cleaner_core::{
     RelatedFileKind, is_apple_bundle_identifier, is_safe_bundle_identifier,
 };
 
+#[derive(Clone, Copy)]
+enum ExpectedEntryKind {
+    Directory,
+    File,
+}
+
 pub(crate) fn find_orphans_for_home(
     installed: &[InstalledApplication],
     home: &Path,
@@ -37,6 +43,7 @@ pub(crate) fn find_orphans_for_home(
         &library.join("Preferences"),
         ".plist",
         RelatedFileKind::Preference,
+        ExpectedEntryKind::File,
         &live_bundle_identifiers,
     );
     collect_suffixed_entries(
@@ -44,6 +51,7 @@ pub(crate) fn find_orphans_for_home(
         &library.join("Saved Application State"),
         ".savedState",
         RelatedFileKind::SavedState,
+        ExpectedEntryKind::Directory,
         &live_bundle_identifiers,
     );
 
@@ -57,9 +65,14 @@ fn collect_directory_bundle_entries(
     kind: RelatedFileKind,
     live_bundle_identifiers: &HashSet<&str>,
 ) {
-    collect_entries(report, root, kind, live_bundle_identifiers, |name| {
-        looks_like_bundle_identifier(name).then(|| name.to_owned())
-    });
+    collect_entries(
+        report,
+        root,
+        kind,
+        ExpectedEntryKind::Directory,
+        live_bundle_identifiers,
+        |name| looks_like_bundle_identifier(name).then(|| name.to_owned()),
+    );
 }
 
 fn collect_suffixed_entries(
@@ -67,18 +80,27 @@ fn collect_suffixed_entries(
     root: &Path,
     suffix: &str,
     kind: RelatedFileKind,
+    expected_entry_kind: ExpectedEntryKind,
     live_bundle_identifiers: &HashSet<&str>,
 ) {
-    collect_entries(report, root, kind, live_bundle_identifiers, |name| {
-        let identifier = name.strip_suffix(suffix)?;
-        looks_like_bundle_identifier(identifier).then(|| identifier.to_owned())
-    });
+    collect_entries(
+        report,
+        root,
+        kind,
+        expected_entry_kind,
+        live_bundle_identifiers,
+        |name| {
+            let identifier = name.strip_suffix(suffix)?;
+            looks_like_bundle_identifier(identifier).then(|| identifier.to_owned())
+        },
+    );
 }
 
 fn collect_entries<F>(
     report: &mut OrphanReport,
     root: &Path,
     kind: RelatedFileKind,
+    expected_entry_kind: ExpectedEntryKind,
     live_bundle_identifiers: &HashSet<&str>,
     bundle_identifier_from_name: F,
 ) where
@@ -88,10 +110,9 @@ fn collect_entries<F>(
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
         Err(error) => {
-            report.issues.push(OrphanFinderIssue::new(
-                root.to_path_buf(),
-                error.to_string(),
-            ));
+            report
+                .issues
+                .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
             return;
         }
     };
@@ -114,10 +135,9 @@ fn collect_entries<F>(
     let entries = match fs::read_dir(root) {
         Ok(entries) => entries,
         Err(error) => {
-            report.issues.push(OrphanFinderIssue::new(
-                root.to_path_buf(),
-                error.to_string(),
-            ));
+            report
+                .issues
+                .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
             return;
         }
     };
@@ -126,10 +146,9 @@ fn collect_entries<F>(
         let entry = match entry {
             Ok(entry) => entry,
             Err(error) => {
-                report.issues.push(OrphanFinderIssue::new(
-                    root.to_path_buf(),
-                    error.to_string(),
-                ));
+                report
+                    .issues
+                    .push(OrphanFinderIssue::new(root.to_path_buf(), error.to_string()));
                 continue;
             }
         };
@@ -143,7 +162,7 @@ fn collect_entries<F>(
                 continue;
             }
         };
-        if file_type.is_symlink() {
+        if file_type.is_symlink() || !matches_expected_entry_kind(&file_type, expected_entry_kind) {
             continue;
         }
 
@@ -167,6 +186,16 @@ fn collect_entries<F>(
             kind,
             MatchConfidence::High,
         ));
+    }
+}
+
+fn matches_expected_entry_kind(
+    file_type: &std::fs::FileType,
+    expected_entry_kind: ExpectedEntryKind,
+) -> bool {
+    match expected_entry_kind {
+        ExpectedEntryKind::Directory => file_type.is_dir(),
+        ExpectedEntryKind::File => file_type.is_file(),
     }
 }
 
@@ -219,10 +248,7 @@ mod tests {
         let report = find_orphans_for_home(&[installed("com.example.live")], &home);
 
         assert_eq!(report.candidates.len(), 1);
-        assert_eq!(
-            report.candidates[0].bundle_identifier,
-            "com.example.removed"
-        );
+        assert_eq!(report.candidates[0].bundle_identifier, "com.example.removed");
         assert_eq!(report.candidates[0].confidence, MatchConfidence::High);
 
         fs::remove_dir_all(home).expect("temp root must be removed");
@@ -273,6 +299,22 @@ mod tests {
                 && candidate.kind == RelatedFileKind::SavedState
         }));
 
+        fs::remove_dir_all(home).expect("temp root must be removed");
+    }
+
+    #[test]
+    fn requires_expected_filesystem_entry_kind() {
+        let home = temp_root("entry-kind");
+        fs::create_dir_all(home.join("Library/Preferences/com.example.not-a-file.plist"))
+            .expect("directory preference fixture must be created");
+        fs::create_dir_all(home.join("Library/Caches"))
+            .expect("cache root must be created");
+        fs::write(home.join("Library/Caches/com.example.not-a-directory"), b"fixture")
+            .expect("cache file fixture must be created");
+
+        let report = find_orphans_for_home(&[], &home);
+
+        assert!(report.candidates.is_empty());
         fs::remove_dir_all(home).expect("temp root must be removed");
     }
 
