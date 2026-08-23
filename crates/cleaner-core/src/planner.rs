@@ -1,6 +1,8 @@
 use std::{fs, path::PathBuf};
 
-use crate::{CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, safety::is_protected_broad_root};
+use crate::{
+    CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, safety::is_protected_broad_root,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AllowedRoot {
@@ -97,8 +99,8 @@ impl Planner {
             return Err(SafetyError::SymlinkSelected);
         }
 
-        let canonical_path = fs::canonicalize(&item.path)
-            .map_err(|_| SafetyError::PathRevalidationFailed)?;
+        let canonical_path =
+            fs::canonicalize(&item.path).map_err(|_| SafetyError::PathRevalidationFailed)?;
         if is_protected_broad_root(&canonical_path) {
             return Err(SafetyError::ProtectedRoot);
         }
@@ -211,10 +213,8 @@ mod tests {
         )]);
         assert!(Planner::validate_item_for_execution(&scan_item, &allowed).is_ok());
 
-        let wrong_category = ExecutionPolicy::enabled(vec![AllowedRoot::new(
-            CleanupCategory::Node,
-            root.clone(),
-        )]);
+        let wrong_category =
+            ExecutionPolicy::enabled(vec![AllowedRoot::new(CleanupCategory::Node, root.clone())]);
         assert_eq!(
             Planner::validate_item_for_execution(&scan_item, &wrong_category),
             Err(SafetyError::OutsideAllowedRoots)
