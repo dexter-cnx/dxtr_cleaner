@@ -2,7 +2,7 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use cleaner_core::{
     CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan, NodeScan, Planner,
-    ScanSummary, Scanner, UserCacheScan, XcodeScan,
+    ScanSummary, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
 };
 
 fn main() -> ExitCode {
@@ -77,18 +77,17 @@ fn scan_request(category: CleanupCategory) -> Result<cleaner_core::ScanRequest, 
 
     match category {
         CleanupCategory::UserCache => Ok(UserCacheScan::new(home).request()),
+        CleanupCategory::SystemCache => Ok(SystemCacheScan.request()),
         CleanupCategory::Xcode => Ok(XcodeScan::new(home).request()),
         CleanupCategory::Homebrew => Ok(HomebrewScan::new(home).request()),
         CleanupCategory::Node => Ok(NodeScan::new(home).request()),
-        CleanupCategory::SystemCache | CleanupCategory::Docker | CleanupCategory::LargeFiles => {
-            Err(format!(
-                "category '{}' is not implemented in M1 yet",
-                category.label()
-            ))
-        }
+        CleanupCategory::Docker | CleanupCategory::LargeFiles => Err(format!(
+            "category '{}' is not implemented in M1",
+            category.label()
+        )),
     }
 }
 
 fn print_usage() {
-    println!("dxtr-cleaner scan [--category user|dev|brew|node]");
+    println!("dxtr-cleaner scan [--category user|system|dev|brew|node]");
 }
