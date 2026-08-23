@@ -7,13 +7,30 @@ use std::{
     },
 };
 
-use crate::{CleanupCategory, ScanItem, ScanSummary};
+use crate::{CleanupCategory, ScanItem, ScanSummary, safety::is_protected_broad_root};
 
 #[derive(Debug, Clone)]
 pub struct ScanRequest {
     pub category: CleanupCategory,
     pub roots: Vec<PathBuf>,
     pub excluded_roots: Vec<PathBuf>,
+}
+
+impl ScanRequest {
+    fn validate(&self) -> io::Result<()> {
+        if let Some(root) = self
+            .roots
+            .iter()
+            .find(|root| is_protected_broad_root(root.as_path()))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("refusing to scan protected broad root: {}", root.display()),
+            ));
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,12 +121,7 @@ impl FileSystemScanner {
 
         let metadata = match fs::symlink_metadata(&root) {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
-            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-                sink.emit(ScanEvent::PermissionDenied { path: root });
-                return Ok(true);
-            }
-            Err(error) => return Err(error),
+            Err(error) => return handle_optional_path_error(&root, error, sink),
         };
         let file_type = metadata.file_type();
 
@@ -144,12 +156,7 @@ impl FileSystemScanner {
         if metadata.is_dir() {
             let entries = match fs::read_dir(&root) {
                 Ok(entries) => entries,
-                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-                    sink.emit(ScanEvent::PermissionDenied { path: root });
-                    return Ok(true);
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
-                Err(error) => return Err(error),
+                Err(error) => return handle_optional_path_error(&root, error, sink),
             };
 
             for entry in entries {
@@ -159,11 +166,12 @@ impl FileSystemScanner {
 
                 let entry = match entry {
                     Ok(entry) => entry,
-                    Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
-                        sink.emit(ScanEvent::PermissionDenied { path: root.clone() });
-                        continue;
+                    Err(error) => {
+                        if handle_optional_path_error(&root, error, sink)? {
+                            continue;
+                        }
+                        return Ok(false);
                     }
-                    Err(error) => return Err(error),
                 };
 
                 if !Self::walk(entry.path(), request, cancellation, sink, out)? {
@@ -188,6 +196,8 @@ impl Scanner for FileSystemScanner {
         cancellation: &CancellationToken,
         sink: &mut dyn ScanEventSink,
     ) -> io::Result<Vec<ScanItem>> {
+        request.validate()?;
+
         sink.emit(ScanEvent::Started {
             category: request.category,
             root_count: request.roots.len(),
@@ -216,6 +226,23 @@ impl Scanner for FileSystemScanner {
         }
 
         Ok(items)
+    }
+}
+
+fn handle_optional_path_error(
+    path: &Path,
+    error: io::Error,
+    sink: &mut dyn ScanEventSink,
+) -> io::Result<bool> {
+    match error.kind() {
+        io::ErrorKind::NotFound => Ok(true),
+        io::ErrorKind::PermissionDenied => {
+            sink.emit(ScanEvent::PermissionDenied {
+                path: path.to_path_buf(),
+            });
+            Ok(true)
+        }
+        _ => Err(error),
     }
 }
 
@@ -318,6 +345,33 @@ mod tests {
         assert_eq!(items[0].path, keep.join("keep.bin"));
 
         fs::remove_dir_all(root).expect("remove temp dir");
+    }
+
+    #[test]
+    fn rejects_protected_broad_scan_root() {
+        let scanner = FileSystemScanner;
+        let error = scanner
+            .scan(&request(PathBuf::from("/System")))
+            .expect_err("protected broad root must be rejected");
+
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn reports_permission_denied_from_error_seam() {
+        let path = PathBuf::from("/fixture/denied");
+        let mut events = Vec::new();
+        let mut sink = |event| events.push(event);
+
+        let handled = handle_optional_path_error(
+            &path,
+            io::Error::from(io::ErrorKind::PermissionDenied),
+            &mut sink,
+        )
+        .expect("permission denied is handled");
+
+        assert!(handled);
+        assert_eq!(events, vec![ScanEvent::PermissionDenied { path }]);
     }
 
     #[test]
