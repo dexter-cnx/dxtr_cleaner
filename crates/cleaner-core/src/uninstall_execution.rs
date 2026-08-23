@@ -5,13 +5,15 @@ use std::{
 
 use crate::{
     ApplicationLocation, ApplicationProtectionPolicy, CancellationToken, InstalledApplication,
-    TrashBackend, UninstallPlan, UninstallPlanItemKind, safety::is_protected_broad_root,
+    RelatedFileReport, TrashBackend, UninstallPlan, UninstallPlanItemKind,
+    safety::is_protected_broad_root,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UninstallExecutionError {
     ProtectedApplication,
     StalePlan,
+    UnverifiedPath(PathBuf),
     MissingPath(PathBuf),
     Symlink(PathBuf),
     PathChanged(PathBuf),
@@ -86,7 +88,10 @@ pub struct UninstallExecutionPolicy {
 }
 
 impl UninstallExecutionPolicy {
-    pub fn pin(plan: &UninstallPlan) -> Result<Self, UninstallExecutionError> {
+    pub fn pin(
+        plan: &UninstallPlan,
+        verified_related: &RelatedFileReport,
+    ) -> Result<Self, UninstallExecutionError> {
         if plan.is_protected() {
             return Err(UninstallExecutionError::ProtectedApplication);
         }
@@ -94,6 +99,24 @@ impl UninstallExecutionPolicy {
         let mut pinned_items = Vec::new();
         for item in plan.items().iter().filter(|item| item.is_selected()) {
             let path = item.path().to_path_buf();
+            match item.kind() {
+                UninstallPlanItemKind::ApplicationBundle => {
+                    if item.path() != plan.application().path {
+                        return Err(UninstallExecutionError::UnverifiedPath(path));
+                    }
+                }
+                UninstallPlanItemKind::RelatedFile(kind) => {
+                    let verified = verified_related.candidates.iter().any(|candidate| {
+                        candidate.path == item.path()
+                            && candidate.kind == kind
+                            && candidate.confidence == item.confidence()
+                    });
+                    if !verified {
+                        return Err(UninstallExecutionError::UnverifiedPath(path));
+                    }
+                }
+            }
+
             let canonical_path = validate_and_canonicalize(&path, item.kind())?;
             pinned_items.push(PinnedUninstallItem {
                 path,
@@ -271,22 +294,28 @@ mod tests {
         )
     }
 
-    fn plan_fixture(root: &Path) -> UninstallPlan {
+    fn related_report(root: &Path) -> RelatedFileReport {
+        RelatedFileReport {
+            candidates: vec![RelatedFileCandidate::new(
+                root.join("com.example.app"),
+                RelatedFileKind::Cache,
+                MatchConfidence::High,
+                MatchEvidence::ExactBundleIdentifier("com.example.app".into()),
+            )],
+        }
+    }
+
+    fn plan_fixture(root: &Path) -> (UninstallPlan, RelatedFileReport) {
         let app_path = root.join("Example.app");
         let cache_path = root.join("com.example.app");
         fs::create_dir_all(&app_path).expect("create app");
         fs::create_dir_all(&cache_path).expect("create cache");
-        UninstallPlan::build(
+        let related = related_report(root);
+        let plan = UninstallPlan::build(
             application(app_path, "com.example.app"),
-            RelatedFileReport {
-                candidates: vec![RelatedFileCandidate::new(
-                    cache_path,
-                    RelatedFileKind::Cache,
-                    MatchConfidence::High,
-                    MatchEvidence::ExactBundleIdentifier("com.example.app".into()),
-                )],
-            },
-        )
+            related.clone(),
+        );
+        (plan, related)
     }
 
     #[test]
@@ -300,8 +329,22 @@ mod tests {
         );
 
         assert_eq!(
-            UninstallExecutionPolicy::pin(&plan),
+            UninstallExecutionPolicy::pin(&plan, &RelatedFileReport::default()),
             Err(UninstallExecutionError::ProtectedApplication)
+        );
+        fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn policy_rejects_related_path_missing_from_fresh_evidence() {
+        let root = temp_root("unverified");
+        let (plan, _) = plan_fixture(&root);
+
+        assert_eq!(
+            UninstallExecutionPolicy::pin(&plan, &RelatedFileReport::default()),
+            Err(UninstallExecutionError::UnverifiedPath(
+                root.join("com.example.app")
+            ))
         );
         fs::remove_dir_all(root).expect("remove temp root");
     }
@@ -309,8 +352,8 @@ mod tests {
     #[test]
     fn selection_change_after_pinning_is_rejected_as_stale() {
         let root = temp_root("stale-selection");
-        let mut plan = plan_fixture(&root);
-        let policy = UninstallExecutionPolicy::pin(&plan).expect("pin plan");
+        let (mut plan, related) = plan_fixture(&root);
+        let policy = UninstallExecutionPolicy::pin(&plan, &related).expect("pin plan");
         let cache = root.join("com.example.app");
         assert!(plan.set_selected(&cache, false));
         let current = plan.application().clone();
@@ -331,8 +374,8 @@ mod tests {
     #[test]
     fn application_identity_change_is_rejected_as_stale() {
         let root = temp_root("stale-app");
-        let plan = plan_fixture(&root);
-        let policy = UninstallExecutionPolicy::pin(&plan).expect("pin plan");
+        let (plan, related) = plan_fixture(&root);
+        let policy = UninstallExecutionPolicy::pin(&plan, &related).expect("pin plan");
         let current = application(root.join("Example.app"), "com.example.changed");
 
         assert_eq!(
@@ -351,8 +394,8 @@ mod tests {
     #[test]
     fn trash_order_keeps_application_bundle_last() {
         let root = temp_root("order");
-        let plan = plan_fixture(&root);
-        let policy = UninstallExecutionPolicy::pin(&plan).expect("pin plan");
+        let (plan, related) = plan_fixture(&root);
+        let policy = UninstallExecutionPolicy::pin(&plan, &related).expect("pin plan");
         let current = plan.application().clone();
         let backend = RecordingTrash::default();
 
