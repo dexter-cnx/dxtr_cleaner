@@ -71,8 +71,16 @@ fn run_app_inventory() -> ExitCode {
                 .as_deref()
                 .unwrap_or("-"),
             application.metadata.short_version.as_deref().unwrap_or("-"),
-            application.metadata.bundle_version.as_deref().unwrap_or("-"),
-            application.metadata.team_identifier.as_deref().unwrap_or("-")
+            application
+                .metadata
+                .bundle_version
+                .as_deref()
+                .unwrap_or("-"),
+            application
+                .metadata
+                .team_identifier
+                .as_deref()
+                .unwrap_or("-")
         );
     }
     for issue in &report.issues {
