@@ -70,7 +70,10 @@ impl UninstallPlan {
         );
         items.sort_by(|left, right| {
             matches!(right.kind, UninstallPlanItemKind::ApplicationBundle)
-                .cmp(&matches!(left.kind, UninstallPlanItemKind::ApplicationBundle))
+                .cmp(&matches!(
+                    left.kind,
+                    UninstallPlanItemKind::ApplicationBundle
+                ))
                 .then_with(|| left.path.cmp(&right.path))
         });
 
@@ -104,9 +107,7 @@ impl UninstallPlan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        ApplicationLocation, ApplicationMetadata, MatchEvidence, RelatedFileCandidate,
-    };
+    use crate::{ApplicationLocation, ApplicationMetadata, MatchEvidence, RelatedFileCandidate};
 
     fn app(bundle_identifier: &str) -> InstalledApplication {
         InstalledApplication::new(
@@ -169,7 +170,11 @@ mod tests {
 
         assert!(plan.is_protected());
         assert_eq!(plan.selected_count(), 0);
-        assert!(plan.items.iter().all(|item| !item.selected && !item.selectable));
+        assert!(
+            plan.items
+                .iter()
+                .all(|item| !item.selected && !item.selectable)
+        );
         assert!(!plan.set_selected(std::path::Path::new("/tmp/high"), true));
     }
 
