@@ -197,7 +197,7 @@ impl CleanerApp {
                                 entity.update(cx, |this, cx| {
                                     this.apply_message(message);
                                     cx.notify();
-                                })?;
+                                });
 
                                 if terminal {
                                     break;
