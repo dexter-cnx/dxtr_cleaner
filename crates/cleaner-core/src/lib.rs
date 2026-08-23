@@ -1,5 +1,6 @@
 mod action_policy;
 mod app_inventory;
+mod app_protection;
 mod executor;
 mod model;
 mod planner;
@@ -14,6 +15,9 @@ pub use action_policy::{
 pub use app_inventory::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
     ApplicationLocation, ApplicationMetadata, InstalledApplication,
+};
+pub use app_protection::{
+    ApplicationProtection, ApplicationProtectionPolicy, ApplicationProtectionReason,
 };
 pub use executor::{
     CleanupBackend, CleanupExecutor, ExecutionFailure, ExecutionRecord, ExecutionReport,
