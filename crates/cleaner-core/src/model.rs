@@ -74,16 +74,14 @@ impl CleanupPlan {
 
     pub fn set_all_selected(&mut self, selected: bool) {
         for entry in &mut self.items {
-            if !entry.item.is_symlink {
-                entry.selected = selected;
-            }
+            entry.selected = selected && !entry.item.is_symlink;
         }
     }
 
     pub fn set_category_selected(&mut self, category: CleanupCategory, selected: bool) {
         for entry in &mut self.items {
-            if entry.item.category == category && !entry.item.is_symlink {
-                entry.selected = selected;
+            if entry.item.category == category {
+                entry.selected = selected && !entry.item.is_symlink;
             }
         }
     }
@@ -136,6 +134,31 @@ mod tests {
         assert!(!plan.items[1].selected);
         assert_eq!(plan.selected_count(), 1);
         assert_eq!(plan.selected_bytes(), 10);
+    }
+
+    #[test]
+    fn bulk_selection_normalizes_preselected_symlinks() {
+        let mut plan = CleanupPlan {
+            items: vec![
+                CleanupPlanItem {
+                    item: item("/tmp/cache", CleanupCategory::UserCache, 10, false),
+                    selected: true,
+                },
+                CleanupPlanItem {
+                    item: item("/tmp/link", CleanupCategory::UserCache, 20, true),
+                    selected: true,
+                },
+            ],
+        };
+
+        plan.set_all_selected(false);
+        assert!(!plan.items[0].selected);
+        assert!(!plan.items[1].selected);
+
+        plan.items[1].selected = true;
+        plan.set_category_selected(CleanupCategory::UserCache, true);
+        assert!(plan.items[0].selected);
+        assert!(!plan.items[1].selected);
     }
 
     #[test]
