@@ -104,6 +104,7 @@ impl FileSystemScanner {
 
         let metadata = match fs::symlink_metadata(&root) {
             Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
             Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
                 sink.emit(ScanEvent::PermissionDenied { path: root });
                 return Ok(true);
@@ -147,6 +148,7 @@ impl FileSystemScanner {
                     sink.emit(ScanEvent::PermissionDenied { path: root });
                     return Ok(true);
                 }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
                 Err(error) => return Err(error),
             };
 
@@ -200,8 +202,7 @@ impl Scanner for FileSystemScanner {
                 break;
             }
 
-            if root.exists() && !Self::walk(root.clone(), request, cancellation, sink, &mut items)?
-            {
+            if !Self::walk(root.clone(), request, cancellation, sink, &mut items)? {
                 completed = false;
                 break;
             }
@@ -271,6 +272,25 @@ mod tests {
         assert!(matches!(events.last(), Some(ScanEvent::Finished { .. })));
 
         fs::remove_dir_all(root).expect("remove temp dir");
+    }
+
+    #[test]
+    fn ignores_missing_optional_roots() {
+        let root = temp_root("missing");
+        let scanner = FileSystemScanner;
+        let cancellation = CancellationToken::new();
+        let mut events = Vec::new();
+        let mut sink = |event| events.push(event);
+        let items = scanner
+            .scan_with(&request(root), &cancellation, &mut sink)
+            .expect("missing root is optional");
+
+        assert!(items.is_empty());
+        assert!(matches!(events.first(), Some(ScanEvent::Started { .. })));
+        assert!(matches!(events.last(), Some(ScanEvent::Finished { .. })));
+        assert!(!events
+            .iter()
+            .any(|event| matches!(event, ScanEvent::PermissionDenied { .. })));
     }
 
     #[test]
