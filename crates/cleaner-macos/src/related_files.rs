@@ -5,7 +5,10 @@ use cleaner_core::{
     RelatedFileReport,
 };
 
-pub(crate) fn related_files_for_home(application: &InstalledApplication, home: &Path) -> RelatedFileReport {
+pub(crate) fn related_files_for_home(
+    application: &InstalledApplication,
+    home: &Path,
+) -> RelatedFileReport {
     let library = home.join("Library");
     let mut report = RelatedFileReport::default();
 
@@ -150,7 +153,10 @@ fn push_if_safe(
 mod tests {
     use super::*;
     use cleaner_core::{ApplicationLocation, ApplicationMetadata};
-    use std::{path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn temp_root(test_name: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -208,8 +214,11 @@ mod tests {
         fs::create_dir_all(&by_host).expect("ByHost fixture must be created");
         fs::write(by_host.join("com.example.app.ABC.plist"), b"fixture")
             .expect("preference fixture must be created");
-        fs::write(by_host.join("com.example.application.ABC.plist"), b"fixture")
-            .expect("non-match fixture must be created");
+        fs::write(
+            by_host.join("com.example.application.ABC.plist"),
+            b"fixture",
+        )
+        .expect("non-match fixture must be created");
 
         let report = related_files_for_home(&application(), &home);
 
