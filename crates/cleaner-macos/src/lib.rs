@@ -26,9 +26,7 @@ impl MacPlatform for SystemMacPlatform {
     fn open_full_disk_access_settings(&self) -> Result<(), String> {
         #[cfg(target_os = "macos")]
         {
-            run_open([
-                "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
-            ])
+            run_open(["x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"])
         }
         #[cfg(not(target_os = "macos"))]
         {
