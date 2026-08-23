@@ -17,11 +17,20 @@ impl ApplicationLocation {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ApplicationMetadata {
+    pub bundle_identifier: Option<String>,
+    pub bundle_version: Option<String>,
+    pub short_version: Option<String>,
+    pub team_identifier: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstalledApplication {
     pub path: PathBuf,
     pub name: String,
     pub location: ApplicationLocation,
+    pub metadata: ApplicationMetadata,
 }
 
 impl InstalledApplication {
@@ -30,7 +39,13 @@ impl InstalledApplication {
             path,
             name: name.into(),
             location,
+            metadata: ApplicationMetadata::default(),
         }
+    }
+
+    pub fn with_metadata(mut self, metadata: ApplicationMetadata) -> Self {
+        self.metadata = metadata;
+        self
     }
 }
 
@@ -104,5 +119,16 @@ mod tests {
 
         assert_eq!(report.applications[0].name, "Alpha");
         assert_eq!(report.issues[0].path, PathBuf::from("/a"));
+    }
+
+    #[test]
+    fn application_metadata_is_optional_by_default() {
+        let application = InstalledApplication::new(
+            PathBuf::from("/Applications/Example.app"),
+            "Example",
+            ApplicationLocation::Local,
+        );
+
+        assert_eq!(application.metadata, ApplicationMetadata::default());
     }
 }
