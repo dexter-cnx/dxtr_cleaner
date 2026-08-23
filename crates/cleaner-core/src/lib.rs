@@ -6,7 +6,8 @@ mod scanner;
 mod target;
 
 pub use executor::{
-    CleanupAction, CleanupExecutor, ExecutionRecord, ExecutionReport, TrashBackend,
+    CleanupAction, CleanupExecutor, ExecutionFailure, ExecutionRecord, ExecutionReport,
+    TrashBackend,
 };
 pub use model::{CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, ScanSummary};
 pub use planner::{AllowedRoot, ExecutionPolicy, Planner, SafetyError};
