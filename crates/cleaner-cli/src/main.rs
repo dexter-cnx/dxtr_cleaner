@@ -202,6 +202,11 @@ fn run_uninstall_plan(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     };
 
+    if env::var_os("HOME").is_none() {
+        eprintln!("cannot build uninstall plan: HOME is not set, so user applications and related files cannot be inventoried completely");
+        return ExitCode::FAILURE;
+    }
+
     let platform = SystemMacPlatform;
     let inventory = platform.inventory();
     if !inventory.issues.is_empty() {
@@ -240,26 +245,28 @@ fn run_uninstall_plan(args: &[String]) -> ExitCode {
 
     let related = platform.related_files(&application);
     let plan = UninstallPlan::build(application, related);
+    let application = plan.application();
 
     println!(
         "application\t{}\t{}\tprotected={}",
-        plan.application.name,
-        plan.application.path.display(),
+        application.name,
+        application.path.display(),
         plan.is_protected()
     );
-    for item in &plan.items {
-        let kind = match item.kind {
+    for item in plan.items() {
+        let kind = match item.kind() {
             UninstallPlanItemKind::ApplicationBundle => "application",
             UninstallPlanItemKind::RelatedFile(kind) => kind.label(),
         };
         println!(
-            "{}\t{}\t{}\tselected={}\tselectable={}\treview_only={}",
-            item.confidence.label(),
+            "{}\t{}\t{}\tselected={}\tselectable={}\trequired={}\treview_only={}",
+            item.confidence().label(),
             kind,
-            item.path.display(),
-            item.selected,
-            item.selectable,
-            item.review_only
+            item.path().display(),
+            item.is_selected(),
+            item.is_selectable(),
+            item.is_required(),
+            item.is_review_only()
         );
     }
     println!("selected items: {}", plan.selected_count());
