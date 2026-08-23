@@ -288,9 +288,11 @@ mod tests {
         assert!(items.is_empty());
         assert!(matches!(events.first(), Some(ScanEvent::Started { .. })));
         assert!(matches!(events.last(), Some(ScanEvent::Finished { .. })));
-        assert!(!events
-            .iter()
-            .any(|event| matches!(event, ScanEvent::PermissionDenied { .. })));
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, ScanEvent::PermissionDenied { .. }))
+        );
     }
 
     #[test]
