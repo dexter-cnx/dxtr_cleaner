@@ -200,9 +200,7 @@ impl Scanner for FileSystemScanner {
                 break;
             }
 
-            if root.exists()
-                && !Self::walk(root.clone(), request, cancellation, sink, &mut items)?
-            {
+            if root.exists() && !Self::walk(root.clone(), request, cancellation, sink, &mut items)? {
                 completed = false;
                 break;
             }
@@ -220,7 +218,9 @@ impl Scanner for FileSystemScanner {
 }
 
 fn is_excluded(path: &Path, excluded_roots: &[PathBuf]) -> bool {
-    excluded_roots.iter().any(|excluded| path.starts_with(excluded))
+    excluded_roots
+        .iter()
+        .any(|excluded| path.starts_with(excluded))
 }
 
 #[cfg(test)]
@@ -262,7 +262,11 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].bytes, 4);
         assert!(matches!(events.first(), Some(ScanEvent::Started { .. })));
-        assert!(events.iter().any(|event| matches!(event, ScanEvent::ItemFound { .. })));
+        assert!(
+            events
+                .iter()
+                .any(|event| matches!(event, ScanEvent::ItemFound { .. }))
+        );
         assert!(matches!(events.last(), Some(ScanEvent::Finished { .. })));
 
         fs::remove_dir_all(root).expect("remove temp dir");
