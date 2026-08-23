@@ -73,8 +73,8 @@ impl RelatedFileReport {
         self.candidates.sort_by(|left, right| {
             left.path
                 .cmp(&right.path)
+                .then_with(|| right.confidence.cmp(&left.confidence))
                 .then_with(|| left.kind.cmp(&right.kind))
-                .then_with(|| left.confidence.cmp(&right.confidence))
                 .then_with(|| left.evidence.cmp(&right.evidence))
         });
         self.candidates.dedup_by(|left, right| left.path == right.path);
@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn report_sort_deduplicates_paths() {
+    fn report_sort_deduplicates_paths_and_keeps_strongest_evidence() {
         let path = PathBuf::from("/tmp/com.example.app");
         let mut report = RelatedFileReport {
             candidates: vec![
