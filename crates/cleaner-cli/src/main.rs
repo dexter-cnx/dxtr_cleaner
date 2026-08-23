@@ -1,6 +1,8 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
-use cleaner_core::{CleanupCategory, FileSystemScanner, Planner, ScanRequest, ScanSummary, Scanner};
+use cleaner_core::{
+    CleanupCategory, FileSystemScanner, Planner, ScanRequest, ScanSummary, Scanner,
+};
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -53,9 +55,13 @@ fn default_roots(category: CleanupCategory) -> Vec<PathBuf> {
     let home = env::var_os("HOME").map(PathBuf::from);
     match (category, home) {
         (CleanupCategory::UserCache, Some(home)) => vec![home.join("Library/Caches")],
-        (CleanupCategory::Xcode, Some(home)) => vec![home.join("Library/Developer/Xcode/DerivedData")],
+        (CleanupCategory::Xcode, Some(home)) => {
+            vec![home.join("Library/Developer/Xcode/DerivedData")]
+        }
         (CleanupCategory::Homebrew, Some(home)) => vec![home.join("Library/Caches/Homebrew")],
-        (CleanupCategory::Node, Some(home)) => vec![home.join(".npm"), home.join("Library/pnpm/store")],
+        (CleanupCategory::Node, Some(home)) => {
+            vec![home.join(".npm"), home.join("Library/pnpm/store")]
+        }
         _ => Vec::new(),
     }
 }
