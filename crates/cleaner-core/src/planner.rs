@@ -8,13 +8,17 @@ use crate::{
 pub struct AllowedRoot {
     pub category: CleanupCategory,
     pub path: PathBuf,
+    canonical_path: Option<PathBuf>,
 }
 
 impl AllowedRoot {
     pub fn new(category: CleanupCategory, path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        let canonical_path = fs::canonicalize(&path).ok();
         Self {
             category,
-            path: path.into(),
+            path,
+            canonical_path,
         }
     }
 }
@@ -110,11 +114,25 @@ impl Planner {
                 return false;
             }
 
-            let Ok(canonical_root) = fs::canonicalize(&allowed.path) else {
+            let Some(pinned_root) = allowed.canonical_path.as_ref() else {
                 return false;
             };
 
-            canonical_path != canonical_root && canonical_path.starts_with(&canonical_root)
+            let Ok(root_metadata) = fs::symlink_metadata(&allowed.path) else {
+                return false;
+            };
+            if root_metadata.file_type().is_symlink() {
+                return false;
+            }
+
+            let Ok(current_root) = fs::canonicalize(&allowed.path) else {
+                return false;
+            };
+            if current_root != *pinned_root {
+                return false;
+            }
+
+            canonical_path != *pinned_root && canonical_path.starts_with(pinned_root)
         });
 
         if !allowed {
@@ -193,8 +211,8 @@ mod tests {
                 &plan,
                 &ExecutionPolicy::enabled(vec![AllowedRoot::new(
                     CleanupCategory::SystemCache,
-                    "/Library/Caches"
-                )])
+                    "/Library/Caches",
+                )]),
             ),
             Err(SafetyError::ProtectedRoot)
         );
@@ -265,6 +283,38 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execution_rejects_allow_list_root_swapped_to_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let parent = temp_root("root-swap-parent");
+        let root = parent.join("cache");
+        let moved_root = parent.join("cache-original");
+        let outside = temp_root("root-swap-outside");
+        fs::create_dir_all(&root).expect("create allow-list root");
+        fs::write(root.join("cache.bin"), b"cache").expect("write cache file");
+        fs::write(outside.join("cache.bin"), b"outside").expect("write outside file");
+
+        let policy = ExecutionPolicy::enabled(vec![AllowedRoot::new(
+            CleanupCategory::UserCache,
+            root.clone(),
+        )]);
+        let scan_item = item(root.join("cache.bin"), CleanupCategory::UserCache, false);
+
+        fs::rename(&root, &moved_root).expect("move original root");
+        symlink(&outside, &root).expect("replace root with symlink");
+
+        assert_eq!(
+            Planner::validate_item_for_execution(&scan_item, &policy),
+            Err(SafetyError::OutsideAllowedRoots)
+        );
+
+        fs::remove_file(&root).expect("remove root symlink");
+        fs::remove_dir_all(parent).expect("remove parent");
+        fs::remove_dir_all(outside).expect("remove outside root");
     }
 
     #[test]
