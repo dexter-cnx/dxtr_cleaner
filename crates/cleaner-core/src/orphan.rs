@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::{InstalledApplication, MatchConfidence, RelatedFileKind};
+use crate::{ApplicationInventoryReport, MatchConfidence, RelatedFileKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrphanCandidate {
@@ -67,7 +67,7 @@ impl OrphanReport {
 }
 
 pub trait OrphanFinder {
-    fn find_orphans(&self, installed: &[InstalledApplication]) -> OrphanReport;
+    fn find_orphans(&self, inventory: &ApplicationInventoryReport) -> OrphanReport;
 }
 
 #[cfg(test)]
@@ -83,13 +83,13 @@ mod tests {
                     "z.example.app",
                     path.clone(),
                     RelatedFileKind::Preference,
-                    MatchConfidence::Medium,
+                    MatchConfidence::Low,
                 ),
                 OrphanCandidate::new(
                     "a.example.app",
                     path,
                     RelatedFileKind::Cache,
-                    MatchConfidence::High,
+                    MatchConfidence::Medium,
                 ),
             ],
             issues: Vec::new(),
@@ -98,7 +98,7 @@ mod tests {
         report.sort_deterministically();
 
         assert_eq!(report.candidates.len(), 1);
-        assert_eq!(report.candidates[0].confidence, MatchConfidence::High);
+        assert_eq!(report.candidates[0].confidence, MatchConfidence::Medium);
         assert_eq!(report.candidates[0].bundle_identifier, "a.example.app");
     }
 }
