@@ -18,6 +18,7 @@ pub struct UninstallPlanItem {
     pub confidence: MatchConfidence,
     pub selected: bool,
     pub selectable: bool,
+    pub required: bool,
     pub review_only: bool,
 }
 
@@ -28,7 +29,8 @@ impl UninstallPlanItem {
             kind: UninstallPlanItemKind::ApplicationBundle,
             confidence: MatchConfidence::High,
             selected: !protected,
-            selectable: !protected,
+            selectable: false,
+            required: !protected,
             review_only: false,
         }
     }
@@ -41,6 +43,7 @@ impl UninstallPlanItem {
             confidence: candidate.confidence,
             selected: !protected && !review_only,
             selectable: !protected,
+            required: false,
             review_only,
         }
     }
@@ -96,7 +99,7 @@ impl UninstallPlan {
         let Some(item) = self.items.iter_mut().find(|item| item.path == path) else {
             return false;
         };
-        if !item.selectable {
+        if !item.selectable || item.required {
             return false;
         }
         item.selected = selected;
@@ -131,8 +134,8 @@ mod tests {
     }
 
     #[test]
-    fn unprotected_plan_selects_app_and_high_confidence_related_by_default() {
-        let plan = UninstallPlan::build(
+    fn unprotected_plan_selects_required_app_and_high_confidence_related_by_default() {
+        let mut plan = UninstallPlan::build(
             app("com.example.app"),
             RelatedFileReport {
                 candidates: vec![
@@ -146,8 +149,12 @@ mod tests {
         assert!(!plan.is_protected());
         assert_eq!(plan.selected_count(), 2);
         assert!(plan.items.iter().any(|item| {
-            item.path == PathBuf::from("/Applications/Example.app") && item.selected
+            item.path == PathBuf::from("/Applications/Example.app")
+                && item.selected
+                && item.required
+                && !item.selectable
         }));
+        assert!(!plan.set_selected(std::path::Path::new("/Applications/Example.app"), false));
         assert!(plan.items.iter().any(|item| {
             item.path == PathBuf::from("/tmp/high") && item.selected && !item.review_only
         }));
@@ -173,7 +180,7 @@ mod tests {
         assert!(
             plan.items
                 .iter()
-                .all(|item| !item.selected && !item.selectable)
+                .all(|item| !item.selected && !item.selectable && !item.required)
         );
         assert!(!plan.set_selected(std::path::Path::new("/tmp/high"), true));
     }
