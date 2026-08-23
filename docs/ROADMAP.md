@@ -39,12 +39,14 @@ Permanent delete remains an explicit core policy capability rather than a fronte
 
 ## M3 — app uninstaller
 
-- [ ] installed app inventory
+- [x] installed app inventory
 - [ ] bundle/team metadata
 - [ ] related-file matcher
 - [ ] confidence tiers
 - [ ] system-app protection
 - [ ] orphan finder
+
+The inventory slice discovers `.app` bundles under `/Applications`, `/System/Applications`, and `~/Applications`, including nested application folders. App bundles are treated as leaves, directory symlinks are never followed, unreadable subtrees are reported as partial-result warnings, and the shared inventory model remains frontend-neutral. `dxtr-cleaner apps` provides a CLI validation surface for the same Rust inventory API.
 
 ## M4 — macOS integration
 
