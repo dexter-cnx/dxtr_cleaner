@@ -65,10 +65,7 @@ impl MacPlatform for SystemMacPlatform {
 
     fn permanent_delete(&self, path: &Path) -> Result<(), String> {
         let _ = path;
-        Err(
-            "permanent delete safety lock: requires anchored no-follow filesystem mutation"
-                .into(),
-        )
+        Err("permanent delete safety lock: requires anchored no-follow filesystem mutation".into())
     }
 
     fn installed_application_paths(&self) -> Result<Vec<PathBuf>, String> {
