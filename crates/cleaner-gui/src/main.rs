@@ -7,8 +7,9 @@ use std::{
 };
 
 use cleaner_core::{
-    CancellationToken, CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan,
-    NodeScan, ScanEvent, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
+    CancellationToken, CategoryScanTarget, CleanupCategory, CleanupPlan, FileSystemScanner,
+    HomebrewScan, NodeScan, Planner, ScanEvent, ScanItem, Scanner, SystemCacheScan, UserCacheScan,
+    XcodeScan,
 };
 use gpui::{
     App, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
@@ -16,6 +17,7 @@ use gpui::{
 use gpui_platform::application;
 
 const MAX_EVENTS_PER_TICK: usize = 128;
+const MAX_REVIEW_ROWS: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanState {
@@ -33,7 +35,7 @@ impl ScanState {
             Self::Idle => "Ready",
             Self::Scanning => "Scanning…",
             Self::Cancelling => "Cancelling…",
-            Self::Completed => "Completed",
+            Self::Completed => "Review ready",
             Self::Cancelled => "Cancelled",
             Self::Failed => "Failed",
         }
@@ -63,6 +65,8 @@ struct CleanerApp {
     permission_denied: usize,
     error: Option<String>,
     cancellation: Option<CancellationToken>,
+    scanned_items: Vec<ScanItem>,
+    cleanup_plan: Option<CleanupPlan>,
 }
 
 impl CleanerApp {
@@ -77,6 +81,8 @@ impl CleanerApp {
             permission_denied: 0,
             error: None,
             cancellation: None,
+            scanned_items: Vec::new(),
+            cleanup_plan: None,
         }
     }
 
@@ -88,6 +94,8 @@ impl CleanerApp {
         self.node = Metric::default();
         self.permission_denied = 0;
         self.error = None;
+        self.scanned_items.clear();
+        self.cleanup_plan = None;
     }
 
     fn metric_mut(&mut self, category: CleanupCategory) -> Option<&mut Metric> {
@@ -108,6 +116,7 @@ impl CleanerApp {
                     metric.items += 1;
                     metric.bytes = metric.bytes.saturating_add(item.bytes);
                 }
+                self.scanned_items.push(item);
             }
             UiMessage::Event(ScanEvent::PermissionDenied { .. }) => {
                 self.permission_denied += 1;
@@ -116,15 +125,18 @@ impl CleanerApp {
             UiMessage::Completed => {
                 self.state = ScanState::Completed;
                 self.cancellation = None;
+                self.cleanup_plan = Some(Planner::build(std::mem::take(&mut self.scanned_items)));
             }
             UiMessage::Cancelled => {
                 self.state = ScanState::Cancelled;
                 self.cancellation = None;
+                self.scanned_items.clear();
             }
             UiMessage::Failed(error) => {
                 self.state = ScanState::Failed;
                 self.error = Some(error);
                 self.cancellation = None;
+                self.scanned_items.clear();
             }
         }
     }
@@ -240,6 +252,13 @@ impl CleanerApp {
         self.state = ScanState::Cancelling;
         cx.notify();
     }
+
+    fn set_all_review_items(&mut self, selected: bool, cx: &mut Context<Self>) {
+        if let Some(plan) = &mut self.cleanup_plan {
+            plan.set_all_selected(selected);
+            cx.notify();
+        }
+    }
 }
 
 impl Render for CleanerApp {
@@ -260,6 +279,117 @@ impl Render for CleanerApp {
             ),
             None => self.state.label().to_string(),
         };
+
+        let review_panel = self.cleanup_plan.as_ref().map(|plan| {
+            let selected_count = plan.selected_count();
+            let selected_bytes = plan.selected_bytes();
+            let total_count = plan.items.len();
+            let hidden_count = total_count.saturating_sub(MAX_REVIEW_ROWS);
+            let rows = plan
+                .items
+                .iter()
+                .take(MAX_REVIEW_ROWS)
+                .map(|entry| {
+                    let marker = if entry.item.is_symlink {
+                        "Protected symlink"
+                    } else if entry.selected {
+                        "Selected"
+                    } else {
+                        "Skipped"
+                    };
+                    let marker_color = if entry.selected {
+                        rgb(0x83e6a2)
+                    } else {
+                        rgb(0xa9afb8)
+                    };
+
+                    div()
+                        .px_3()
+                        .py_2()
+                        .rounded_md()
+                        .bg(rgb(0x13161b))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .gap_3()
+                        .child(
+                            div()
+                                .flex_1()
+                                .child(entry.item.path.display().to_string()),
+                        )
+                        .child(
+                            div()
+                                .text_color(rgb(0xa9afb8))
+                                .child(format_bytes(entry.item.bytes)),
+                        )
+                        .child(div().text_color(marker_color).child(marker))
+                })
+                .collect::<Vec<_>>();
+
+            div()
+                .p_5()
+                .rounded_xl()
+                .bg(rgb(0x171a20))
+                .border_1()
+                .border_color(rgb(0x262a33))
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(div().text_lg().child("Cleanup plan review"))
+                        .child(
+                            div().text_color(rgb(0xa9afb8)).child(format!(
+                                "{} of {} selected · {}",
+                                selected_count,
+                                total_count,
+                                format_bytes(selected_bytes)
+                            )),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(
+                            div()
+                                .id("select-all")
+                                .px_3()
+                                .py_2()
+                                .rounded_md()
+                                .bg(rgb(0x2b303a))
+                                .cursor_pointer()
+                                .child("Select all safe items")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.set_all_review_items(true, cx);
+                                })),
+                        )
+                        .child(
+                            div()
+                                .id("deselect-all")
+                                .px_3()
+                                .py_2()
+                                .rounded_md()
+                                .bg(rgb(0x2b303a))
+                                .cursor_pointer()
+                                .child("Deselect all")
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.set_all_review_items(false, cx);
+                                })),
+                        ),
+                )
+                .children(rows)
+                .when(hidden_count > 0, |panel| {
+                    panel.child(
+                        div().text_color(rgb(0xa9afb8)).child(format!(
+                            "+ {hidden_count} more item(s) in this plan; full per-item controls follow in M2 execution work"
+                        )),
+                    )
+                })
+        });
 
         div()
             .flex()
@@ -287,7 +417,7 @@ impl Render for CleanerApp {
                                     .rounded_full()
                                     .bg(rgb(0x173624))
                                     .text_color(rgb(0x83e6a2))
-                                    .child("Safe mode · dry-run"),
+                                    .child("Safe mode · review only"),
                             ),
                     )
                     .child(
@@ -357,6 +487,7 @@ impl Render for CleanerApp {
                             .child(metric_card("Homebrew", self.homebrew))
                             .child(metric_card("Node", self.node)),
                     )
+                    .when_some(review_panel, |page, panel| page.child(panel))
                     .child(
                         div()
                             .p_5()
@@ -365,7 +496,7 @@ impl Render for CleanerApp {
                             .border_1()
                             .border_color(rgb(0x262a33))
                             .child(
-                                "M1 Smart Scan is read-only. Destructive cleanup remains disabled.",
+                                "M2 review is enabled. Destructive cleanup remains disabled until execution safety policy lands.",
                             ),
                     ),
             )

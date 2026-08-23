@@ -24,7 +24,7 @@
 
 ## M2 — review + cleaning
 
-- [ ] cleanup plan review UI
+- [x] cleanup plan review UI
 - [ ] move-to-trash where appropriate
 - [ ] permanent-delete policy by category
 - [ ] symlink-safe canonicalization and revalidation
