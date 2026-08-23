@@ -50,10 +50,10 @@ pub struct OrphanReport {
 impl OrphanReport {
     pub fn sort_deterministically(&mut self) {
         self.candidates.sort_by(|left, right| {
-            left.bundle_identifier
-                .cmp(&right.bundle_identifier)
-                .then_with(|| left.path.cmp(&right.path))
+            left.path
+                .cmp(&right.path)
                 .then_with(|| right.confidence.cmp(&left.confidence))
+                .then_with(|| left.bundle_identifier.cmp(&right.bundle_identifier))
                 .then_with(|| left.kind.cmp(&right.kind))
         });
         self.candidates
@@ -80,13 +80,13 @@ mod tests {
         let mut report = OrphanReport {
             candidates: vec![
                 OrphanCandidate::new(
-                    "com.example.app",
+                    "z.example.app",
                     path.clone(),
                     RelatedFileKind::Preference,
                     MatchConfidence::Medium,
                 ),
                 OrphanCandidate::new(
-                    "com.example.app",
+                    "a.example.app",
                     path,
                     RelatedFileKind::Cache,
                     MatchConfidence::High,
@@ -99,5 +99,6 @@ mod tests {
 
         assert_eq!(report.candidates.len(), 1);
         assert_eq!(report.candidates[0].confidence, MatchConfidence::High);
+        assert_eq!(report.candidates[0].bundle_identifier, "a.example.app");
     }
 }
