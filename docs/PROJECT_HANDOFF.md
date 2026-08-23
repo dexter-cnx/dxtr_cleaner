@@ -2,9 +2,9 @@
 
 ## Current state
 
-M0 and M1 Smart Scan are complete and merged to `main`.
+M0, M1 Smart Scan, and M2 review + Trash-only execution are complete and merged to `main`. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
 
-M2 core execution safety, execution engine, and category action policy are complete. The active branch `feature/m2-gpui-execution` wires the reviewed cleanup plan into the GPUI product flow using Trash-only execution. Permanent delete remains safety-locked in the macOS backend and is not exposed by GPUI.
+M3 has started on `feature/m3-app-inventory`. The first slice is read-only installed-application inventory: shared frontend-neutral inventory models live in `cleaner-core`, while `cleaner-macos` discovers `.app` bundles under local, system, and user application roots. `dxtr-cleaner apps` is the CLI validation surface for the same API.
 
 For a code-oriented tour of the repository, read [`CODE_WALKTHROUGH.md`](./CODE_WALKTHROUGH.md) before changing scan, cleanup, execution, GPUI, or platform-boundary code.
 
@@ -93,11 +93,23 @@ The macOS permanent-delete backend intentionally fails closed. A previous path-b
 - the UI displays execution completion/cancellation/failure status, moved bytes, and per-run success/failure counts
 - after any completed execution the cleanup plan is discarded, forcing a fresh scan before another mutation and avoiding stale-plan reuse
 
+### M3 installed application inventory
+
+- `ApplicationInventory` is a frontend-neutral core trait
+- inventory results contain typed application location (`user`, `local`, `system`), display name, and bundle path
+- partial traversal failures are preserved as structured warnings rather than discarding successful results
+- macOS roots are `/Applications`, `/System/Applications`, and `~/Applications`
+- nested application folders are traversed, but a discovered `.app` bundle is treated as a leaf
+- directory symlinks are never followed
+- output is sorted deterministically for stable UI/CLI behavior and tests
+- `dxtr-cleaner apps` exercises the same Rust API without introducing GPUI-specific inventory logic
+- this slice is read-only; it adds no uninstall or mutation path
+
 ### Important safety decision
 
 `ExecutionPolicy::default()` disables mutation. A caller must explicitly construct an enabled execution policy with pinned allow-list roots before `CleanupExecutor` performs any mutation.
 
-GPUI now exposes only **Move selected to Trash**. It does not expose permanent deletion. The product badge explicitly states `Safe mode · Trash only`.
+GPUI exposes only **Move selected to Trash**. It does not expose permanent deletion. The product badge explicitly states `Safe mode · Trash only`.
 
 Protected broad roots are centralized in `cleaner-core` and shared by scan validation and execution validation. Descendant paths such as `/Library/Caches` remain eligible for explicitly defined scanners while broad roots such as `/`, `/System`, and `/Library` are rejected.
 
@@ -132,10 +144,10 @@ GPUI frontend   Flutter frontend
 
 Ownership rules:
 
-- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, and platform-native adapters.
+- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, application inventory, and platform-native adapters.
 - Frontends own presentation, interaction, localization, and frontend state only.
 - GPUI-specific types must not leak into core/domain APIs.
-- Cleanup rules and destructive-action policy must not be duplicated in GPUI or future Dart code.
+- Cleanup and uninstall rules must not be duplicated in GPUI or future Dart code.
 - Long-running scan/execution progress and cancellation should cross a frontend-neutral request/result/event boundary.
 - Keep this boundary compatible with a future FFI layer such as `flutter_rust_bridge`, but do not introduce Flutter/FFI work before the Rust application API is stable.
 - CLI should continue consuming the same Rust application/core APIs and serves as a useful frontend-independence check.
@@ -144,14 +156,16 @@ Windows remains a later target after the macOS flow is stable. A GPUI Windows fe
 
 ## Next step
 
-After the GPUI execution PR is merged, M2 is complete and work can proceed to M3 app uninstaller in safety-first slices:
+Continue M3 app uninstaller in safety-first slices:
 
-1. installed application inventory
+1. merge installed application inventory
 2. bundle/team metadata extraction
 3. related-file matcher with confidence tiers
 4. system-app protection
 5. orphan finder
 6. only then reviewed uninstall execution
+
+Do not infer ownership of related files from display names alone. Bundle identifiers and signing/team metadata should become primary evidence in the next slices, and lower-confidence matches must remain review-only.
 
 Keep permanent deletion safety-locked until anchored/no-follow filesystem mutation is implemented and separately reviewed.
 

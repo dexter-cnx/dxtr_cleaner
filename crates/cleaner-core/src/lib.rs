@@ -1,4 +1,5 @@
 mod action_policy;
+mod app_inventory;
 mod executor;
 mod model;
 mod planner;
@@ -8,6 +9,10 @@ mod target;
 
 pub use action_policy::{
     ActionPolicyError, CategoryActionPolicy, CleanupAction, supports_permanent_delete,
+};
+pub use app_inventory::{
+    ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
+    ApplicationLocation, InstalledApplication,
 };
 pub use executor::{
     CleanupBackend, CleanupExecutor, ExecutionFailure, ExecutionRecord, ExecutionReport,
