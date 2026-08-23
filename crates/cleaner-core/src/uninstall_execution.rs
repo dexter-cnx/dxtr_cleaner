@@ -4,9 +4,9 @@ use std::{
 };
 
 use crate::{
-    safety::is_protected_broad_root, ApplicationLocation, ApplicationProtectionPolicy,
-    CancellationToken, InstalledApplication, RelatedFileKind, RelatedFileReport, TrashBackend,
-    UninstallPlan, UninstallPlanItemKind,
+    ApplicationLocation, ApplicationProtectionPolicy, CancellationToken, InstalledApplication,
+    RelatedFileKind, RelatedFileReport, TrashBackend, UninstallPlan, UninstallPlanItemKind,
+    safety::is_protected_broad_root,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,11 +39,17 @@ pub struct UninstallExecutionReport {
 
 impl UninstallExecutionReport {
     pub fn succeeded_count(&self) -> usize {
-        self.records.iter().filter(|record| record.result.is_ok()).count()
+        self.records
+            .iter()
+            .filter(|record| record.result.is_ok())
+            .count()
     }
 
     pub fn failed_count(&self) -> usize {
-        self.records.iter().filter(|record| record.result.is_err()).count()
+        self.records
+            .iter()
+            .filter(|record| record.result.is_err())
+            .count()
     }
 }
 
@@ -205,15 +211,17 @@ impl UninstallExecutor {
                 break;
             }
 
-            let canonical_path = match validate_and_canonicalize(&item.path, item.kind, item.root.as_ref()) {
-                Ok(path) => path,
-                Err(error) => {
-                    report.safety_failure = Some(error);
-                    break;
-                }
-            };
+            let canonical_path =
+                match validate_and_canonicalize(&item.path, item.kind, item.root.as_ref()) {
+                    Ok(path) => path,
+                    Err(error) => {
+                        report.safety_failure = Some(error);
+                        break;
+                    }
+                };
             if canonical_path != item.canonical_path {
-                report.safety_failure = Some(UninstallExecutionError::PathChanged(item.path.clone()));
+                report.safety_failure =
+                    Some(UninstallExecutionError::PathChanged(item.path.clone()));
                 break;
             }
 
@@ -286,7 +294,9 @@ fn validate_and_canonicalize(
         },
     };
     if !type_matches {
-        return Err(UninstallExecutionError::UnexpectedEntryType(path.to_path_buf()));
+        return Err(UninstallExecutionError::UnexpectedEntryType(
+            path.to_path_buf(),
+        ));
     }
 
     let canonical_path = fs::canonicalize(path)
@@ -296,11 +306,17 @@ fn validate_and_canonicalize(
     }
 
     if let Some(root) = root {
-        if root.kind != match kind {
-            UninstallPlanItemKind::RelatedFile(kind) => kind,
-            UninstallPlanItemKind::ApplicationBundle => unreachable!("application has no related root"),
-        } {
-            return Err(UninstallExecutionError::OutsideExecutionRoot(path.to_path_buf()));
+        if root.kind
+            != match kind {
+                UninstallPlanItemKind::RelatedFile(kind) => kind,
+                UninstallPlanItemKind::ApplicationBundle => {
+                    unreachable!("application has no related root")
+                }
+            }
+        {
+            return Err(UninstallExecutionError::OutsideExecutionRoot(
+                path.to_path_buf(),
+            ));
         }
 
         let root_metadata = fs::symlink_metadata(&root.path)
@@ -313,8 +329,12 @@ fn validate_and_canonicalize(
         if current_root != root.canonical_path {
             return Err(UninstallExecutionError::PathChanged(root.path.clone()));
         }
-        if canonical_path == root.canonical_path || !canonical_path.starts_with(&root.canonical_path) {
-            return Err(UninstallExecutionError::OutsideExecutionRoot(path.to_path_buf()));
+        if canonical_path == root.canonical_path
+            || !canonical_path.starts_with(&root.canonical_path)
+        {
+            return Err(UninstallExecutionError::OutsideExecutionRoot(
+                path.to_path_buf(),
+            ));
         }
     }
 
@@ -339,7 +359,10 @@ mod tests {
 
     impl TrashBackend for RecordingTrash {
         fn move_to_trash(&self, path: &Path) -> Result<(), String> {
-            self.paths.lock().expect("trash lock").push(path.to_path_buf());
+            self.paths
+                .lock()
+                .expect("trash lock")
+                .push(path.to_path_buf());
             Ok(())
         }
     }
@@ -389,14 +412,23 @@ mod tests {
         }
     }
 
-    fn plan_fixture(root: &Path) -> (UninstallPlan, RelatedFileReport, Vec<RelatedFileExecutionRoot>) {
+    fn plan_fixture(
+        root: &Path,
+    ) -> (
+        UninstallPlan,
+        RelatedFileReport,
+        Vec<RelatedFileExecutionRoot>,
+    ) {
         let app_path = root.join("Example.app");
         let cache_root = root.join("Caches");
         let cache_path = cache_root.join("com.example.app");
         fs::create_dir_all(&app_path).expect("create app");
         fs::create_dir_all(&cache_path).expect("create cache");
         let related = related_report(&cache_root);
-        let roots = vec![RelatedFileExecutionRoot::new(RelatedFileKind::Cache, cache_root)];
+        let roots = vec![RelatedFileExecutionRoot::new(
+            RelatedFileKind::Cache,
+            cache_root,
+        )];
         let plan = UninstallPlan::build(application(app_path, "com.example.app"), related.clone());
         (plan, related, roots)
     }
@@ -443,7 +475,10 @@ mod tests {
         fs::create_dir_all(&app_path).expect("create app");
         let related = related_report(&cache_root);
         let plan = UninstallPlan::build(application(app_path, "com.example.app"), related.clone());
-        let roots = vec![RelatedFileExecutionRoot::new(RelatedFileKind::Cache, cache_root.clone())];
+        let roots = vec![RelatedFileExecutionRoot::new(
+            RelatedFileKind::Cache,
+            cache_root.clone(),
+        )];
 
         assert_eq!(
             UninstallExecutionPolicy::pin(&plan, &related, &roots),
@@ -513,8 +548,14 @@ mod tests {
         assert_eq!(report.succeeded_count(), 2);
         assert!(report.safety_failure.is_none());
         let paths = backend.paths.lock().expect("trash lock");
-        assert_eq!(paths[0], fs::canonicalize(root.join("Caches/com.example.app")).unwrap());
-        assert_eq!(paths[1], fs::canonicalize(root.join("Example.app")).unwrap());
+        assert_eq!(
+            paths[0],
+            fs::canonicalize(root.join("Caches/com.example.app")).unwrap()
+        );
+        assert_eq!(
+            paths[1],
+            fs::canonicalize(root.join("Example.app")).unwrap()
+        );
         fs::remove_dir_all(root).expect("remove temp root");
     }
 
