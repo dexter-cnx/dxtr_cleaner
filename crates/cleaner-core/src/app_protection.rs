@@ -101,9 +101,11 @@ mod tests {
         let protection = ApplicationProtectionPolicy.evaluate(&app);
 
         assert!(protection.is_protected());
-        assert!(protection
-            .reasons()
-            .contains(&ApplicationProtectionReason::SystemLocation));
+        assert!(
+            protection
+                .reasons()
+                .contains(&ApplicationProtectionReason::SystemLocation)
+        );
     }
 
     #[test]
@@ -124,12 +126,11 @@ mod tests {
 
     #[test]
     fn protects_apple_bundle_identifier_even_in_local_applications() {
-        let app = application("/Applications/Safari.app", ApplicationLocation::Local).with_metadata(
-            ApplicationMetadata {
+        let app = application("/Applications/Safari.app", ApplicationLocation::Local)
+            .with_metadata(ApplicationMetadata {
                 bundle_identifier: Some("com.apple.Safari".into()),
                 ..ApplicationMetadata::default()
-            },
-        );
+            });
         let protection = ApplicationProtectionPolicy.evaluate(&app);
 
         assert!(protection.is_protected());
@@ -157,12 +158,11 @@ mod tests {
 
     #[test]
     fn ordinary_local_application_remains_unprotected() {
-        let app = application("/Applications/Example.app", ApplicationLocation::Local).with_metadata(
-            ApplicationMetadata {
+        let app = application("/Applications/Example.app", ApplicationLocation::Local)
+            .with_metadata(ApplicationMetadata {
                 bundle_identifier: Some("com.example.app".into()),
                 ..ApplicationMetadata::default()
-            },
-        );
+            });
 
         assert_eq!(
             ApplicationProtectionPolicy.evaluate(&app),
