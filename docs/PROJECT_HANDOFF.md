@@ -2,7 +2,7 @@
 
 ## Current state
 
-M0 is complete. M1 Smart Scan is functionally complete on `feature/m1-complete-scanners` and is awaiting CI/review before merge.
+M0 and M1 Smart Scan are complete and merged to `main`.
 
 ### Implemented foundation
 
@@ -58,7 +58,40 @@ GPUI and `gpui_platform` are pinned to Zed commit:
 
 Do not float the dependency. Upgrade in a dedicated dependency PR.
 
-## Next milestone after merge
+## Frontend strategy
+
+The current product direction remains **GPUI on macOS first**. Continue building and validating the macOS application with GPUI while keeping the Rust engine independent from GPUI-specific types and lifecycle assumptions.
+
+GPUI is the current reference frontend, not part of the cleanup engine. The architecture must remain ready for a future Flutter desktop frontend without rewriting core cleanup behavior.
+
+Intended dependency direction:
+
+```text
+Rust core/domain
+      ↑
+platform adapters/providers
+      ↑
+stable application API / event boundary
+      ↑
+ ┌────┴──────────────┐
+ │                   │
+GPUI frontend   Flutter frontend
+(current)       (optional later)
+```
+
+Ownership rules:
+
+- Rust owns scanning, cleanup policy, safety checks, planning, execution, reporting, and platform-native adapters.
+- Frontends own presentation, interaction, localization, and frontend state only.
+- GPUI-specific types must not leak into core/domain APIs.
+- Cleanup rules and destructive-action policy must not be duplicated in GPUI or future Dart code.
+- Long-running scan progress and cancellation should cross a frontend-neutral request/result/event boundary.
+- Keep this boundary compatible with a future FFI layer such as `flutter_rust_bridge`, but do not introduce Flutter/FFI work before the Rust application API is stable.
+- CLI should continue consuming the same Rust application/core APIs and serves as a useful frontend-independence check.
+
+Windows remains a later target after the macOS flow is stable. A GPUI Windows feasibility spike is planned first, while a Flutter desktop spike remains an explicit alternative if GPUI Windows maturity or production ergonomics are insufficient.
+
+## Next milestone
 
 M2 — review + cleaning:
 
