@@ -118,6 +118,7 @@ The macOS permanent-delete backend intentionally fails closed. A previous path-b
 
 - `RelatedFileMatcher`, `RelatedFileCandidate`, `MatchEvidence`, `MatchConfidence`, and `RelatedFileKind` live in `cleaner-core`
 - High confidence requires an exact bundle-identifier-derived path
+- bundle identifiers are treated as untrusted metadata and must pass strict safe-component validation before any path construction or prefix matching
 - High candidates currently cover Application Support, Caches, Containers, HTTPStorages, Preferences plist, and Saved Application State paths
 - Medium confidence covers bundle-identifier-prefixed `~/Library/Preferences/ByHost` entries
 - Low confidence covers exact display-name directories under Application Support and Caches
