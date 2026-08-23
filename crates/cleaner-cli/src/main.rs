@@ -2,8 +2,8 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use cleaner_core::{
     ApplicationInventory, ApplicationProtectionPolicy, CategoryScanTarget, CleanupCategory,
-    FileSystemScanner, HomebrewScan, NodeScan, Planner, RelatedFileMatcher, ScanSummary, Scanner,
-    SystemCacheScan, UserCacheScan, XcodeScan,
+    FileSystemScanner, HomebrewScan, NodeScan, OrphanFinder, Planner, RelatedFileMatcher,
+    ScanSummary, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
 };
 use cleaner_macos::SystemMacPlatform;
 
@@ -13,6 +13,7 @@ fn main() -> ExitCode {
         Some("scan") => run_scan(&args),
         Some("apps") => run_app_inventory(),
         Some("related") => run_related_files(&args),
+        Some("orphans") => run_orphan_finder(),
         _ => {
             print_usage();
             ExitCode::SUCCESS
@@ -151,6 +152,34 @@ fn run_related_files(args: &[String]) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+fn run_orphan_finder() -> ExitCode {
+    let platform = SystemMacPlatform;
+    let inventory = platform.inventory();
+    let report = platform.find_orphans(&inventory.applications);
+
+    for candidate in &report.candidates {
+        println!(
+            "{}\t{}\t{}\t{}\treview_only={}",
+            candidate.confidence.label(),
+            candidate.kind.label(),
+            candidate.bundle_identifier,
+            candidate.path.display(),
+            candidate.confidence.is_review_only()
+        );
+    }
+    for issue in &inventory.issues {
+        eprintln!("inventory warning: {}: {}", issue.path.display(), issue.message);
+    }
+    for issue in &report.issues {
+        eprintln!("orphan warning: {}: {}", issue.path.display(), issue.message);
+    }
+
+    println!("orphans: {}", report.candidates.len());
+    println!("inventory warnings: {}", inventory.issues.len());
+    println!("orphan warnings: {}", report.issues.len());
+    ExitCode::SUCCESS
+}
+
 fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
     let Some(index) = args.iter().position(|arg| arg == "--category") else {
         return Ok(CleanupCategory::UserCache);
@@ -203,6 +232,7 @@ fn print_usage() {
     println!("dxtr-cleaner scan [--category user|system|dev|brew|node]");
     println!("dxtr-cleaner apps");
     println!("dxtr-cleaner related <bundle-id>");
+    println!("dxtr-cleaner orphans");
 }
 
 #[cfg(test)]
