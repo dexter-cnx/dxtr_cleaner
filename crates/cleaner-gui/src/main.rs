@@ -15,6 +15,8 @@ use gpui::{
 };
 use gpui_platform::application;
 
+const MAX_EVENTS_PER_TICK: usize = 128;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScanState {
     Idle,
@@ -176,32 +178,42 @@ impl CleanerApp {
 
         let entity = cx.entity();
         window
-            .spawn(cx, async move |cx| loop {
-                cx.background_executor().timer(Duration::from_millis(50)).await;
-
-                let mut terminal = false;
+            .spawn(cx, async move |cx| {
                 loop {
-                    match rx.try_recv() {
-                        Ok(message) => {
-                            terminal = matches!(
-                                message,
-                                UiMessage::Completed | UiMessage::Cancelled | UiMessage::Failed(_)
-                            );
-                            entity.update(cx, |this, cx| {
-                                this.apply_message(message);
-                                cx.notify();
-                            })?;
-                        }
-                        Err(TryRecvError::Empty) => break,
-                        Err(TryRecvError::Disconnected) => {
-                            terminal = true;
-                            break;
+                    cx.background_executor()
+                        .timer(Duration::from_millis(50))
+                        .await;
+
+                    let mut terminal = false;
+                    for _ in 0..MAX_EVENTS_PER_TICK {
+                        match rx.try_recv() {
+                            Ok(message) => {
+                                terminal = matches!(
+                                    message,
+                                    UiMessage::Completed
+                                        | UiMessage::Cancelled
+                                        | UiMessage::Failed(_)
+                                );
+                                entity.update(cx, |this, cx| {
+                                    this.apply_message(message);
+                                    cx.notify();
+                                })?;
+
+                                if terminal {
+                                    break;
+                                }
+                            }
+                            Err(TryRecvError::Empty) => break,
+                            Err(TryRecvError::Disconnected) => {
+                                terminal = true;
+                                break;
+                            }
                         }
                     }
-                }
 
-                if terminal {
-                    break;
+                    if terminal {
+                        break;
+                    }
                 }
             })
             .detach();
@@ -340,7 +352,9 @@ impl Render for CleanerApp {
                             .bg(rgb(0x171a20))
                             .border_1()
                             .border_color(rgb(0x262a33))
-                            .child("M1 Smart Scan is read-only. Destructive cleanup remains disabled."),
+                            .child(
+                                "M1 Smart Scan is read-only. Destructive cleanup remains disabled.",
+                            ),
                     ),
             )
     }
