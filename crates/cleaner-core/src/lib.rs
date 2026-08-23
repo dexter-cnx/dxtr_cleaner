@@ -8,6 +8,4 @@ pub use planner::{ExecutionPolicy, Planner, SafetyError};
 pub use scanner::{
     CancellationToken, FileSystemScanner, ScanEvent, ScanEventSink, ScanRequest, Scanner,
 };
-pub use target::{
-    CategoryScanTarget, HomebrewScan, NodeScan, UserCacheScan, XcodeScan,
-};
+pub use target::{CategoryScanTarget, HomebrewScan, NodeScan, UserCacheScan, XcodeScan};
