@@ -2,7 +2,7 @@ use std::{env, path::PathBuf, process::ExitCode};
 
 use cleaner_core::{
     CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan, NodeScan, Planner,
-    ScanSummary, Scanner, UserCacheScan, XcodeScan,
+    ScanSummary, Scanner, SystemCacheScan, UserCacheScan, XcodeScan,
 };
 
 fn main() -> ExitCode {
@@ -71,24 +71,53 @@ fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
 }
 
 fn scan_request(category: CleanupCategory) -> Result<cleaner_core::ScanRequest, String> {
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .ok_or_else(|| "HOME is not set".to_string())?;
+    scan_request_with_home(category, env::var_os("HOME").map(PathBuf::from))
+}
+
+fn scan_request_with_home(
+    category: CleanupCategory,
+    home: Option<PathBuf>,
+) -> Result<cleaner_core::ScanRequest, String> {
+    if category == CleanupCategory::SystemCache {
+        return Ok(SystemCacheScan.request());
+    }
+
+    let home = home.ok_or_else(|| "HOME is not set".to_string())?;
 
     match category {
         CleanupCategory::UserCache => Ok(UserCacheScan::new(home).request()),
         CleanupCategory::Xcode => Ok(XcodeScan::new(home).request()),
         CleanupCategory::Homebrew => Ok(HomebrewScan::new(home).request()),
         CleanupCategory::Node => Ok(NodeScan::new(home).request()),
-        CleanupCategory::SystemCache | CleanupCategory::Docker | CleanupCategory::LargeFiles => {
-            Err(format!(
-                "category '{}' is not implemented in M1 yet",
-                category.label()
-            ))
-        }
+        CleanupCategory::SystemCache => unreachable!("handled before HOME lookup"),
+        CleanupCategory::Docker | CleanupCategory::LargeFiles => Err(format!(
+            "category '{}' is not implemented in M1",
+            category.label()
+        )),
     }
 }
 
 fn print_usage() {
-    println!("dxtr-cleaner scan [--category user|dev|brew|node]");
+    println!("dxtr-cleaner scan [--category user|system|dev|brew|node]");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn system_scan_request_does_not_require_home() {
+        let request = scan_request_with_home(CleanupCategory::SystemCache, None)
+            .expect("system request must not require HOME");
+        assert_eq!(request.category, CleanupCategory::SystemCache);
+        assert_eq!(request.roots, vec![PathBuf::from("/Library/Caches")]);
+    }
+
+    #[test]
+    fn user_relative_scan_still_requires_home() {
+        assert_eq!(
+            scan_request_with_home(CleanupCategory::UserCache, None).unwrap_err(),
+            "HOME is not set"
+        );
+    }
 }

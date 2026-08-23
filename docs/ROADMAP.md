@@ -12,13 +12,13 @@
 
 ## M1 — real Smart Scan
 
-- [ ] user cache scanner
-- [ ] system cache scanner
-- [ ] Xcode DerivedData scanner
-- [ ] Homebrew cache scanner
-- [ ] Node/npm/pnpm/yarn cache scanners
-- [ ] exclusions and protected roots
-- [ ] live GUI progress events
+- [x] user cache scanner
+- [x] system cache scanner
+- [x] Xcode DerivedData scanner
+- [x] Homebrew cache scanner
+- [x] Node/npm/pnpm/yarn cache scanners
+- [x] exclusions and protected roots
+- [x] live GUI progress events
 
 ## M2 — review + cleaning
 

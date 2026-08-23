@@ -2,8 +2,7 @@
 
 ## Current state
 
-M0 and the main M1 Smart Scan interaction are merged. Final M1 hardening is active on
-`feature/m1-scan-hardening`.
+M0 is complete. M1 Smart Scan is functionally complete on `feature/m1-complete-scanners` and is awaiting CI/review before merge.
 
 ### Implemented foundation
 
@@ -18,24 +17,25 @@ M0 and the main M1 Smart Scan interaction are merged. Final M1 hardening is acti
 
 ### M1 scan engine
 
-- typed scan targets for User Cache, Xcode, Homebrew, and Node
+- typed scan targets for User Cache, System Cache, Xcode, Homebrew, and Node
+- Node target covers npm, pnpm, Yarn Classic, and Yarn Berry caches
 - explicit exclusion roots in `ScanRequest`
-- User Cache excludes Homebrew to prevent double-counted metrics
+- User Cache excludes Homebrew and Yarn caches to prevent double-counted metrics
 - scan event sink with started/item/permission/finished/cancelled events
 - cooperative `CancellationToken`
 - symlink traversal protection retained
 - root-level permission errors are not hidden by `Path::exists()`
 - protected broad roots are rejected before filesystem traversal
-- safety checks lexically normalize parent components such as `..`
+- protected-root checks use filesystem-aware canonicalization when possible and conservative normalized fallback semantics
 - deterministic permission-denied error-classification coverage
-- CLI builds requests from typed category targets
+- CLI supports User Cache, System Cache, Xcode, Homebrew, and Node dry-run scans
 
 ### M1 GPUI Smart Scan
 
 - Smart Scan runs filesystem work on a worker thread
 - scan events cross into GPUI through a channel
 - event draining is bounded per tick so the UI and Cancel control remain responsive
-- User Cache, Xcode, Homebrew, and Node cards show live bytes/items
+- User Cache, System Cache, Xcode, Homebrew, and Node cards show live bytes/items
 - cancellation is wired to the core `CancellationToken`
 - permission-denied paths are surfaced in scan status
 - destructive execution remains disabled
@@ -58,12 +58,19 @@ GPUI and `gpui_platform` are pinned to Zed commit:
 
 Do not float the dependency. Upgrade in a dedicated dependency PR.
 
-## Remaining M1 tasks
+## Next milestone after merge
 
-1. Validate this final hardening PR with `make ci`.
-2. Address review feedback, if any.
-3. Keep destructive execution disabled.
-4. Merge and mark M1 complete.
+M2 — review + cleaning:
+
+1. cleanup plan review UI
+2. move-to-trash where appropriate
+3. permanent-delete policy by category
+4. symlink-safe canonicalization and execution-time revalidation
+5. allow-list enforcement
+6. execution report
+7. cancellation
+
+Keep destructive execution disabled until the M2 review/revalidation boundaries are implemented and tested.
 
 ## Validation
 
