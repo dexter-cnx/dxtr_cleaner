@@ -5,7 +5,7 @@ mod scanner;
 mod target;
 
 pub use model::{CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, ScanSummary};
-pub use planner::{ExecutionPolicy, Planner, SafetyError};
+pub use planner::{AllowedRoot, ExecutionPolicy, Planner, SafetyError};
 pub use scanner::{
     CancellationToken, FileSystemScanner, ScanEvent, ScanEventSink, ScanRequest, Scanner,
 };
