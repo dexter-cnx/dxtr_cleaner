@@ -229,7 +229,14 @@ mod tests {
 
     #[test]
     fn rejects_unsafe_bundle_identifiers_before_joining_paths() {
-        for identifier in ["..", "/", "com/example/app", "com..example", ".com.example", "com.example."] {
+        for identifier in [
+            "..",
+            "/",
+            "com/example/app",
+            "com..example",
+            ".com.example",
+            "com.example.",
+        ] {
             assert!(!is_safe_bundle_identifier(identifier), "{identifier}");
         }
         assert!(is_safe_bundle_identifier("com.example.app"));
