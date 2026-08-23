@@ -42,7 +42,7 @@ pub use target::{
     CategoryScanTarget, HomebrewScan, NodeScan, SystemCacheScan, UserCacheScan, XcodeScan,
 };
 pub use uninstall_execution::{
-    UninstallExecutionError, UninstallExecutionPolicy, UninstallExecutionRecord,
-    UninstallExecutionReport, UninstallExecutor,
+    RelatedFileExecutionRoot, UninstallExecutionError, UninstallExecutionPolicy,
+    UninstallExecutionRecord, UninstallExecutionReport, UninstallExecutor,
 };
 pub use uninstall_plan::{UninstallPlan, UninstallPlanItem, UninstallPlanItemKind};
