@@ -77,7 +77,8 @@ impl RelatedFileReport {
                 .then_with(|| left.kind.cmp(&right.kind))
                 .then_with(|| left.evidence.cmp(&right.evidence))
         });
-        self.candidates.dedup_by(|left, right| left.path == right.path);
+        self.candidates
+            .dedup_by(|left, right| left.path == right.path);
     }
 }
 
