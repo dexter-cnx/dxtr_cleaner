@@ -1,7 +1,8 @@
 use std::{env, path::PathBuf, process::ExitCode};
 
 use cleaner_core::{
-    CleanupCategory, FileSystemScanner, Planner, ScanRequest, ScanSummary, Scanner,
+    CategoryScanTarget, CleanupCategory, FileSystemScanner, HomebrewScan, NodeScan, Planner,
+    ScanSummary, Scanner, UserCacheScan, XcodeScan,
 };
 
 fn main() -> ExitCode {
@@ -20,8 +21,8 @@ fn main() -> ExitCode {
         }
     };
 
-    let roots = match default_roots(category) {
-        Ok(roots) => roots,
+    let request = match scan_request(category) {
+        Ok(request) => request,
         Err(error) => {
             eprintln!("{error}");
             return ExitCode::FAILURE;
@@ -30,7 +31,7 @@ fn main() -> ExitCode {
 
     let scanner = FileSystemScanner;
 
-    match scanner.scan(&ScanRequest { category, roots }) {
+    match scanner.scan(&request) {
         Ok(items) => {
             let summary = ScanSummary::from_items(&items);
             let plan = Planner::build(items);
@@ -38,7 +39,7 @@ fn main() -> ExitCode {
             println!("items: {}", summary.item_count);
             println!("bytes: {}", summary.total_bytes);
             println!("selected bytes: {}", plan.selected_bytes());
-            println!("mode: dry-run (M0 destructive execution disabled)");
+            println!("mode: dry-run (M1 destructive execution disabled)");
             ExitCode::SUCCESS
         }
         Err(error) => {
@@ -69,19 +70,19 @@ fn parse_category(args: &[String]) -> Result<CleanupCategory, String> {
     }
 }
 
-fn default_roots(category: CleanupCategory) -> Result<Vec<PathBuf>, String> {
+fn scan_request(category: CleanupCategory) -> Result<cleaner_core::ScanRequest, String> {
     let home = env::var_os("HOME")
         .map(PathBuf::from)
         .ok_or_else(|| "HOME is not set".to_string())?;
 
     match category {
-        CleanupCategory::UserCache => Ok(vec![home.join("Library/Caches")]),
-        CleanupCategory::Xcode => Ok(vec![home.join("Library/Developer/Xcode/DerivedData")]),
-        CleanupCategory::Homebrew => Ok(vec![home.join("Library/Caches/Homebrew")]),
-        CleanupCategory::Node => Ok(vec![home.join(".npm"), home.join("Library/pnpm/store")]),
+        CleanupCategory::UserCache => Ok(UserCacheScan::new(home).request()),
+        CleanupCategory::Xcode => Ok(XcodeScan::new(home).request()),
+        CleanupCategory::Homebrew => Ok(HomebrewScan::new(home).request()),
+        CleanupCategory::Node => Ok(NodeScan::new(home).request()),
         CleanupCategory::SystemCache | CleanupCategory::Docker | CleanupCategory::LargeFiles => {
             Err(format!(
-                "category '{}' is not implemented in M0",
+                "category '{}' is not implemented in M1 yet",
                 category.label()
             ))
         }
