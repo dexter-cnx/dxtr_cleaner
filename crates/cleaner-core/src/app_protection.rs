@@ -53,12 +53,12 @@ impl ApplicationProtectionPolicy {
             reasons.push(ApplicationProtectionReason::SystemPath(root.to_path_buf()));
         }
 
-        if let Some(bundle_identifier) = application.metadata.bundle_identifier.as_deref()
-            && is_apple_bundle_identifier(bundle_identifier)
-        {
-            reasons.push(ApplicationProtectionReason::AppleBundleIdentifier(
-                bundle_identifier.to_owned(),
-            ));
+        if let Some(bundle_identifier) = application.metadata.bundle_identifier.as_deref() {
+            if is_apple_bundle_identifier(bundle_identifier) {
+                reasons.push(ApplicationProtectionReason::AppleBundleIdentifier(
+                    bundle_identifier.to_owned(),
+                ));
+            }
         }
 
         if reasons.is_empty() {
