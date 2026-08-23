@@ -1,6 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::{fs, path::{Path, PathBuf}};
 
-use cleaner_core::{PermanentDeleteBackend, TrashBackend};
+use cleaner_core::{
+    ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
+    ApplicationLocation, InstalledApplication, PermanentDeleteBackend, TrashBackend,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PermissionStatus {
@@ -69,12 +72,112 @@ impl MacPlatform for SystemMacPlatform {
     }
 
     fn installed_application_paths(&self) -> Result<Vec<PathBuf>, String> {
-        let mut roots = vec![PathBuf::from("/Applications")];
-        if let Some(home) = std::env::var_os("HOME") {
-            roots.push(PathBuf::from(home).join("Applications"));
-        }
-        Ok(roots)
+        Ok(self
+            .inventory()
+            .applications
+            .into_iter()
+            .map(|application| application.path)
+            .collect())
     }
+}
+
+impl ApplicationInventory for SystemMacPlatform {
+    fn inventory(&self) -> ApplicationInventoryReport {
+        #[cfg(target_os = "macos")]
+        {
+            let mut roots = vec![
+                (ApplicationLocation::Local, PathBuf::from("/Applications")),
+                (ApplicationLocation::System, PathBuf::from("/System/Applications")),
+            ];
+            if let Some(home) = std::env::var_os("HOME") {
+                roots.push((ApplicationLocation::User, PathBuf::from(home).join("Applications")));
+            }
+            inventory_roots(&roots)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            ApplicationInventoryReport {
+                applications: Vec::new(),
+                issues: vec![ApplicationInventoryIssue::new(
+                    PathBuf::from("/Applications"),
+                    "installed application inventory is available only on macOS",
+                )],
+            }
+        }
+    }
+}
+
+fn inventory_roots(roots: &[(ApplicationLocation, PathBuf)]) -> ApplicationInventoryReport {
+    let mut report = ApplicationInventoryReport::default();
+    for (location, root) in roots {
+        collect_applications(root, *location, true, &mut report);
+    }
+    report.sort_deterministically();
+    report
+}
+
+fn collect_applications(
+    directory: &Path,
+    location: ApplicationLocation,
+    is_root: bool,
+    report: &mut ApplicationInventoryReport,
+) {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if is_root && error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            report.issues.push(ApplicationInventoryIssue::new(
+                directory.to_path_buf(),
+                error.to_string(),
+            ));
+            return;
+        }
+    };
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                report.issues.push(ApplicationInventoryIssue::new(
+                    directory.to_path_buf(),
+                    error.to_string(),
+                ));
+                continue;
+            }
+        };
+        let path = entry.path();
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                report
+                    .issues
+                    .push(ApplicationInventoryIssue::new(path, error.to_string()));
+                continue;
+            }
+        };
+
+        if file_type.is_symlink() || !file_type.is_dir() {
+            continue;
+        }
+
+        if is_app_bundle(&path) {
+            let name = path
+                .file_stem()
+                .map(|value| value.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            report
+                .applications
+                .push(InstalledApplication::new(path, name, location));
+        } else {
+            collect_applications(&path, location, false, report);
+        }
+    }
+}
+
+fn is_app_bundle(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
 }
 
 impl TrashBackend for SystemMacPlatform {
@@ -126,5 +229,66 @@ fn run_open<const N: usize>(args: [&str; N]) -> Result<(), String> {
         Ok(())
     } else {
         Err(format!("open failed with status {status}"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(test_name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock must be after epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "dxtr-cleaner-{test_name}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("temp root must be created");
+        path
+    }
+
+    #[test]
+    fn inventory_finds_app_bundles_in_nested_application_folders() {
+        let root = temp_root("inventory-nested");
+        let utilities = root.join("Utilities");
+        fs::create_dir_all(utilities.join("Tool.app/Contents"))
+            .expect("nested app fixture must be created");
+        fs::create_dir_all(root.join("Direct.app/Contents"))
+            .expect("direct app fixture must be created");
+        fs::create_dir_all(root.join("NotAnApp/Child"))
+            .expect("non-app fixture must be created");
+
+        let report = inventory_roots(&[(ApplicationLocation::Local, root.clone())]);
+
+        assert_eq!(report.applications.len(), 2);
+        assert_eq!(report.applications[0].path, root.join("Direct.app"));
+        assert_eq!(report.applications[1].path, utilities.join("Tool.app"));
+        assert!(report.issues.is_empty());
+
+        fs::remove_dir_all(root).expect("temp root must be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn inventory_does_not_follow_symlinked_directories() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_root("inventory-symlink");
+        let outside = temp_root("inventory-symlink-outside");
+        fs::create_dir_all(outside.join("Escaped.app/Contents"))
+            .expect("outside app fixture must be created");
+        symlink(&outside, root.join("Linked"))
+            .expect("directory symlink fixture must be created");
+
+        let report = inventory_roots(&[(ApplicationLocation::Local, root.clone())]);
+
+        assert!(report.applications.is_empty());
+        assert!(report.issues.is_empty());
+
+        fs::remove_dir_all(root).expect("temp root must be removed");
+        fs::remove_dir_all(outside).expect("outside temp root must be removed");
     }
 }
