@@ -19,10 +19,10 @@ if [[ ! "${URL}" =~ ^https:// ]]; then
   exit 1
 fi
 
-ruby_quote() {
+ruby_single_quote() {
   local value="$1"
   value=${value//\\/\\\\}
-  value=${value//\"/\\\"}
+  value=${value//\'/\\\'}
   printf '%s' "$value"
 }
 
@@ -30,10 +30,10 @@ mkdir -p "$(dirname "${OUTPUT}")"
 
 cat > "${OUTPUT}" <<CASK
 cask "dxtr-cleaner" do
-  version "$(ruby_quote "${VERSION}")"
-  sha256 "$(ruby_quote "${SHA256,,}")"
+  version '$(ruby_single_quote "${VERSION}")'
+  sha256 '$(ruby_single_quote "${SHA256,,}")'
 
-  url "$(ruby_quote "${URL}")",
+  url '$(ruby_single_quote "${URL}")',
       verified: "github.com/dexter-cnx/dxtr_cleaner/"
   name "Dxtr Cleaner"
   desc "Safe macOS cleaner and application uninstaller"
@@ -49,4 +49,11 @@ end
 CASK
 
 ruby -c "${OUTPUT}" >/dev/null
+
+# Regression guard: generated release values must remain non-interpolating Ruby data.
+if grep -Eq '^[[:space:]]*(version|sha256|url) "' "${OUTPUT}"; then
+  echo "generated release values must use non-interpolating Ruby literals" >&2
+  exit 1
+fi
+
 printf 'generated: %s\n' "${OUTPUT}"
