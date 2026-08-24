@@ -1,9 +1,6 @@
-#[path = "../launch_agent.rs"]
-mod launch_agent;
-
 use std::{env, path::PathBuf, process::ExitCode};
 
-use launch_agent::{
+use cleaner_macos::launch_agent::{
     DEFAULT_LAUNCH_AGENT_LABEL, LaunchAgentConfig, install_launch_agent, render_launch_agent_plist,
     uninstall_launch_agent,
 };
