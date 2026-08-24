@@ -372,12 +372,27 @@ mod tests {
         let roots = related_file_execution_roots_for_home(&home);
 
         assert_eq!(roots.len(), 6);
-        assert_eq!(roots[0].path(), Path::new("/Users/example/Library/Application Support"));
+        assert_eq!(
+            roots[0].path(),
+            Path::new("/Users/example/Library/Application Support")
+        );
         assert_eq!(roots[1].path(), Path::new("/Users/example/Library/Caches"));
-        assert_eq!(roots[2].path(), Path::new("/Users/example/Library/Containers"));
-        assert_eq!(roots[3].path(), Path::new("/Users/example/Library/HTTPStorages"));
-        assert_eq!(roots[4].path(), Path::new("/Users/example/Library/Preferences"));
-        assert_eq!(roots[5].path(), Path::new("/Users/example/Library/Saved Application State"));
+        assert_eq!(
+            roots[2].path(),
+            Path::new("/Users/example/Library/Containers")
+        );
+        assert_eq!(
+            roots[3].path(),
+            Path::new("/Users/example/Library/HTTPStorages")
+        );
+        assert_eq!(
+            roots[4].path(),
+            Path::new("/Users/example/Library/Preferences")
+        );
+        assert_eq!(
+            roots[5].path(),
+            Path::new("/Users/example/Library/Saved Application State")
+        );
     }
 
     #[test]
