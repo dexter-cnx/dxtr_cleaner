@@ -55,6 +55,9 @@ pub(crate) fn find_orphans_for_home(
         &live_bundle_identifiers,
     );
 
+    if !report.issues.is_empty() {
+        report.candidates.clear();
+    }
     report.sort_deterministically();
     report
 }
@@ -340,6 +343,34 @@ mod tests {
         let report = find_orphans_for_home(&[], &home);
 
         assert!(report.candidates.is_empty());
+
+        fs::remove_dir_all(home).expect("temp root must be removed");
+        fs::remove_dir_all(outside).expect("outside root must be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn incomplete_scan_clears_previously_found_candidates() {
+        use std::os::unix::fs::symlink;
+
+        let home = temp_root("fail-closed");
+        let outside = temp_root("fail-closed-outside");
+        fs::create_dir_all(home.join("Library/Caches/com.example.orphan"))
+            .expect("orphan fixture must be created");
+        fs::create_dir_all(home.join("Library")).expect("library fixture must be created");
+        symlink(&outside, home.join("Library/Preferences"))
+            .expect("symlinked Preferences root must be created");
+
+        let report = find_orphans_for_home(&[], &home);
+
+        assert!(report.candidates.is_empty());
+        assert!(!report.issues.is_empty());
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("symlink"))
+        );
 
         fs::remove_dir_all(home).expect("temp root must be removed");
         fs::remove_dir_all(outside).expect("outside root must be removed");
