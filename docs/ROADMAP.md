@@ -47,7 +47,7 @@ Permanent delete remains an explicit core policy capability rather than a fronte
 - [x] orphan finder
 - [x] reviewed uninstall planning
 - [x] Trash-only core execution foundation
-- [ ] GPUI uninstall review + execution wiring
+- [x] GPUI uninstall review + execution wiring
 
 The inventory slice discovers `.app` bundles under `/Applications`, `/System/Applications`, and `~/Applications`, including nested application folders. App bundles are treated as leaves, directory symlinks are never followed, unreadable subtrees are reported as partial-result warnings, and the shared inventory model remains frontend-neutral. `dxtr-cleaner apps` provides a CLI validation surface for the same Rust inventory API.
 
@@ -62,6 +62,8 @@ Orphan discovery is also read-only. The installed application inventory provides
 Reviewed uninstall planning is frontend-neutral. The application bundle is the required primary item for unprotected apps, High-confidence related files start selected, and Medium/Low evidence remains review-only and default-unselected. Policy-bearing selection fields stay private behind the core plan API.
 
 The Trash-only execution foundation pins the post-review selected set, requires fresh related-file evidence before a related path can be pinned, and pins an explicit canonical execution root for each related-file kind. Those roots are rejected if symlinked and are revalidated immediately before Trash, preventing ancestor-symlink or root-swap escapes. Current application identity and protection are also revalidated immediately before execution, while selected paths are checked for symlinks, protected roots, expected filesystem types, and canonical-path drift. Runtime safety failures preserve all earlier execution records in the report and stop further mutation instead of hiding partial side effects. Related data is trashed before the required app bundle so cancellation preferentially leaves the application installed. Permanent deletion remains disabled.
+
+The GPUI Uninstaller is a separate frontend flow from Smart Care. Installed apps and related-file plans are loaded off the UI thread. Protected apps render locked; High-confidence evidence starts selected, while review-only candidates require explicit opt-in through the core plan API. Every Trash attempt refreshes application inventory and related-file evidence, creates a new execution policy, revalidates safety roots, and discards the reviewed plan and cached application list after the attempt so stale state cannot be reused.
 
 ## M4 — macOS integration
 
