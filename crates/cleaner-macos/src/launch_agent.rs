@@ -100,6 +100,7 @@ pub fn install_launch_agent(home: &Path, config: &LaunchAgentConfig) -> Result<P
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
+    let previous_plist = fs::read(&plist_path).ok();
     let temporary_path = plist_path.with_extension("plist.tmp");
     fs::write(&temporary_path, plist).map_err(|error| error.to_string())?;
     fs::rename(&temporary_path, &plist_path).map_err(|error| error.to_string())?;
@@ -114,12 +115,39 @@ pub fn install_launch_agent(home: &Path, config: &LaunchAgentConfig) -> Result<P
         .args(["bootstrap", &domain])
         .arg(&plist_path)
         .status()
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| {
+            let rollback = rollback_plist(&plist_path, previous_plist.as_deref());
+            format_bootstrap_error(error.to_string(), rollback)
+        })?;
     if !status.success() {
-        return Err(format!("launchctl bootstrap failed with status {status}"));
+        let rollback = rollback_plist(&plist_path, previous_plist.as_deref());
+        return Err(format_bootstrap_error(
+            format!("launchctl bootstrap failed with status {status}"),
+            rollback,
+        ));
     }
 
     Ok(plist_path)
+}
+
+#[cfg(target_os = "macos")]
+fn rollback_plist(plist_path: &Path, previous_plist: Option<&[u8]>) -> Result<(), String> {
+    match previous_plist {
+        Some(previous) => fs::write(plist_path, previous).map_err(|error| error.to_string()),
+        None => match fs::remove_file(plist_path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.to_string()),
+        },
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn format_bootstrap_error(message: String, rollback: Result<(), String>) -> String {
+    match rollback {
+        Ok(()) => message,
+        Err(rollback_error) => format!("{message}; additionally failed to roll back plist: {rollback_error}"),
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
