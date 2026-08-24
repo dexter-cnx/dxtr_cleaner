@@ -104,14 +104,11 @@ pub fn install_launch_agent(home: &Path, config: &LaunchAgentConfig) -> Result<P
     fs::write(&temporary_path, plist).map_err(|error| error.to_string())?;
     fs::rename(&temporary_path, &plist_path).map_err(|error| error.to_string())?;
 
-    let domain = format!("gui/{}", unsafe { libc::geteuid() });
-    let bootout = Command::new("launchctl")
+    let domain = gui_domain(home)?;
+    let _ = Command::new("launchctl")
         .args(["bootout", &domain])
         .arg(&plist_path)
         .status();
-    if let Ok(status) = bootout {
-        let _ = status;
-    }
 
     let status = Command::new("launchctl")
         .args(["bootstrap", &domain])
@@ -139,7 +136,7 @@ pub fn uninstall_launch_agent(home: &Path, label: &str) -> Result<(), String> {
     let plist_path = home
         .join("Library/LaunchAgents")
         .join(format!("{label}.plist"));
-    let domain = format!("gui/{}", unsafe { libc::geteuid() });
+    let domain = gui_domain(home)?;
 
     if plist_path.exists() {
         let status = Command::new("launchctl")
@@ -159,6 +156,14 @@ pub fn uninstall_launch_agent(home: &Path, label: &str) -> Result<(), String> {
 pub fn uninstall_launch_agent(home: &Path, label: &str) -> Result<(), String> {
     let _ = (home, label);
     Err("LaunchAgent scheduling is available only on macOS".into())
+}
+
+#[cfg(target_os = "macos")]
+fn gui_domain(home: &Path) -> Result<String, String> {
+    use std::os::unix::fs::MetadataExt;
+
+    let uid = fs::metadata(home).map_err(|error| error.to_string())?.uid();
+    Ok(format!("gui/{uid}"))
 }
 
 fn xml_escape(value: &str) -> String {
