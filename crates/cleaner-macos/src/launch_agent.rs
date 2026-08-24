@@ -6,6 +6,7 @@ use std::{
 
 pub const DEFAULT_LAUNCH_AGENT_LABEL: &str = "com.cnxdev.dxtr-cleaner.smart-scan";
 pub const MIN_START_INTERVAL_SECONDS: u64 = 15 * 60;
+pub const DAILY_START_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchAgentConfig {
@@ -20,6 +21,56 @@ pub struct LaunchAgentConfig {
 pub struct LaunchAgentStatus {
     pub installed: bool,
     pub plist_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchAgentCoordinator {
+    home: PathBuf,
+    cleaner_executable: PathBuf,
+}
+
+impl LaunchAgentCoordinator {
+    pub fn for_current_process(home: PathBuf, current_executable: PathBuf) -> Result<Self, String> {
+        if !home.is_absolute() {
+            return Err("LaunchAgent HOME path must be absolute".into());
+        }
+        if !current_executable.is_absolute() {
+            return Err("current executable path must be absolute".into());
+        }
+        let parent = current_executable
+            .parent()
+            .ok_or_else(|| "current executable path has no parent directory".to_string())?;
+        Ok(Self {
+            home,
+            cleaner_executable: parent.join("dxtr-cleaner"),
+        })
+    }
+
+    pub fn status(&self) -> Result<LaunchAgentStatus, String> {
+        launch_agent_status(&self.home, DEFAULT_LAUNCH_AGENT_LABEL)
+    }
+
+    pub fn enable_daily(&self) -> Result<PathBuf, String> {
+        let metadata = fs::symlink_metadata(&self.cleaner_executable)
+            .map_err(|error| format!("scheduled cleaner executable is unavailable: {error}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("scheduled cleaner executable must be a regular file".into());
+        }
+        let config = LaunchAgentConfig::smart_scan(
+            &self.home,
+            self.cleaner_executable.clone(),
+            DAILY_START_INTERVAL_SECONDS,
+        );
+        install_launch_agent(&self.home, &config)
+    }
+
+    pub fn disable(&self) -> Result<(), String> {
+        uninstall_launch_agent(&self.home, DEFAULT_LAUNCH_AGENT_LABEL)
+    }
+
+    pub fn cleaner_executable(&self) -> &Path {
+        &self.cleaner_executable
+    }
 }
 
 impl LaunchAgentConfig {
@@ -267,6 +318,38 @@ mod tests {
         ));
         fs::create_dir_all(&home).expect("temp home must be created");
         home
+    }
+
+    #[test]
+    fn coordinator_resolves_in_bundle_cli_sibling() {
+        let coordinator = LaunchAgentCoordinator::for_current_process(
+            PathBuf::from("/Users/example"),
+            PathBuf::from("/Applications/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner"),
+        )
+        .expect("absolute paths must be accepted");
+
+        assert_eq!(
+            coordinator.cleaner_executable(),
+            Path::new("/Applications/Dxtr Cleaner.app/Contents/MacOS/dxtr-cleaner")
+        );
+    }
+
+    #[test]
+    fn coordinator_rejects_relative_process_paths() {
+        assert!(
+            LaunchAgentCoordinator::for_current_process(
+                PathBuf::from("Users/example"),
+                PathBuf::from("/Applications/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner"),
+            )
+            .is_err()
+        );
+        assert!(
+            LaunchAgentCoordinator::for_current_process(
+                PathBuf::from("/Users/example"),
+                PathBuf::from("Dxtr Cleaner"),
+            )
+            .is_err()
+        );
     }
 
     #[test]
