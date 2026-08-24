@@ -1,8 +1,11 @@
-use std::{env, path::PathBuf, sync::mpsc::{self, Receiver}, thread};
-
-use cleaner_macos::launch_agent::{
-    LaunchAgentCoordinator, LaunchAgentCoordinatorStatus,
+use std::{
+    env,
+    path::PathBuf,
+    sync::mpsc::{self, Receiver},
+    thread,
 };
+
+use cleaner_macos::launch_agent::{LaunchAgentCoordinator, LaunchAgentCoordinatorStatus};
 
 pub enum SchedulingMessage {
     Loaded(Result<LaunchAgentCoordinatorStatus, String>),

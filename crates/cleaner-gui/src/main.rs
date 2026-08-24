@@ -526,7 +526,9 @@ impl CleanerApp {
                         .timer(Duration::from_millis(50))
                         .await;
                     match rx.try_recv() {
-                        Ok(SchedulingMessage::Loaded(result) | SchedulingMessage::Updated(result)) => {
+                        Ok(
+                            SchedulingMessage::Loaded(result) | SchedulingMessage::Updated(result),
+                        ) => {
                             entity.update(cx, |this, cx| {
                                 this.scheduling_busy = false;
                                 match result {
