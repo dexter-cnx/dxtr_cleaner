@@ -1,11 +1,7 @@
 use std::path::PathBuf;
 
 #[cfg(target_os = "macos")]
-use std::{
-    fs,
-    io::ErrorKind,
-    path::Path,
-};
+use std::{fs, io::ErrorKind, path::Path};
 
 use crate::PermissionStatus;
 
