@@ -11,7 +11,8 @@ use app_metadata::extract_application_metadata;
 use cleaner_core::{
     ApplicationInventory, ApplicationInventoryIssue, ApplicationInventoryReport,
     ApplicationLocation, InstalledApplication, MatchConfidence, OrphanFinder, OrphanFinderIssue,
-    OrphanReport, PermanentDeleteBackend, RelatedFileMatcher, RelatedFileReport, TrashBackend,
+    OrphanReport, PermanentDeleteBackend, RelatedFileExecutionRoot, RelatedFileKind,
+    RelatedFileMatcher, RelatedFileReport, TrashBackend,
 };
 use orphan::find_orphans_for_home;
 use related_files::related_files_for_home;
@@ -34,6 +35,15 @@ pub trait MacPlatform {
 
 #[derive(Debug, Default)]
 pub struct SystemMacPlatform;
+
+impl SystemMacPlatform {
+    pub fn related_file_execution_roots(&self) -> Result<Vec<RelatedFileExecutionRoot>, String> {
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return Err("HOME is not set; uninstall execution roots are unavailable".into());
+        };
+        Ok(related_file_execution_roots_for_home(&home))
+    }
+}
 
 impl MacPlatform for SystemMacPlatform {
     fn full_disk_access_status(&self) -> PermissionStatus {
@@ -165,6 +175,24 @@ impl OrphanFinder for SystemMacPlatform {
         }
         report
     }
+}
+
+fn related_file_execution_roots_for_home(home: &Path) -> Vec<RelatedFileExecutionRoot> {
+    let library = home.join("Library");
+    vec![
+        RelatedFileExecutionRoot::new(
+            RelatedFileKind::ApplicationSupport,
+            library.join("Application Support"),
+        ),
+        RelatedFileExecutionRoot::new(RelatedFileKind::Cache, library.join("Caches")),
+        RelatedFileExecutionRoot::new(RelatedFileKind::Container, library.join("Containers")),
+        RelatedFileExecutionRoot::new(RelatedFileKind::HttpStorage, library.join("HTTPStorages")),
+        RelatedFileExecutionRoot::new(RelatedFileKind::Preference, library.join("Preferences")),
+        RelatedFileExecutionRoot::new(
+            RelatedFileKind::SavedState,
+            library.join("Saved Application State"),
+        ),
+    ]
 }
 
 fn inventory_roots(roots: &[(ApplicationLocation, PathBuf)]) -> ApplicationInventoryReport {
@@ -336,6 +364,20 @@ mod tests {
         ));
         fs::create_dir_all(&path).expect("temp root must be created");
         path
+    }
+
+    #[test]
+    fn related_file_execution_roots_cover_supported_kinds() {
+        let home = PathBuf::from("/Users/example");
+        let roots = related_file_execution_roots_for_home(&home);
+
+        assert_eq!(roots.len(), 6);
+        assert_eq!(roots[0].path(), Path::new("/Users/example/Library/Application Support"));
+        assert_eq!(roots[1].path(), Path::new("/Users/example/Library/Caches"));
+        assert_eq!(roots[2].path(), Path::new("/Users/example/Library/Containers"));
+        assert_eq!(roots[3].path(), Path::new("/Users/example/Library/HTTPStorages"));
+        assert_eq!(roots[4].path(), Path::new("/Users/example/Library/Preferences"));
+        assert_eq!(roots[5].path(), Path::new("/Users/example/Library/Saved Application State"));
     }
 
     #[test]
