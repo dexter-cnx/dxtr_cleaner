@@ -1,307 +1,320 @@
 # Code Walkthrough
 
-This document explains the codebase from the outside in and shows where scan, review, safety, execution, platform integration, and GPUI responsibilities live.
+This document explains the current codebase from the outside in and shows where scan, cleanup, uninstall, macOS integration, scheduling, packaging, and GPUI responsibilities live.
 
 ## 1. Workspace overview
 
 The workspace is split into four crates:
 
-- `cleaner-core` — domain models, scanners, cleanup planning, safety policy, action policy, execution, reports, and cancellation.
-- `cleaner-macos` — macOS-specific operations such as Finder reveal, Trash integration, System Settings links, and other platform boundaries.
-- `cleaner-cli` — a non-GUI consumer of the same Rust core APIs. It is useful as a frontend-independence check.
-- `cleaner-gui` — the current GPUI desktop frontend for macOS.
+- `cleaner-core` — frontend/platform-neutral domain logic: scanners, plans, safety policy, execution, application inventory, uninstall evidence, orphan discovery, reports, cancellation.
+- `cleaner-macos` — macOS-native integration and adapters: Finder, Trash, Full Disk Access, application discovery helpers, LaunchAgent scheduling.
+- `cleaner-cli` — non-GUI consumer of the same Rust APIs and an architecture check against GUI coupling.
+- `cleaner-gui` — GPUI desktop frontend for macOS.
 
-The intended dependency direction is:
+Dependency direction:
 
 ```text
 cleaner-core
     ↑
-platform adapters / application integration
+cleaner-macos / platform adapters
+    ↑
+stable Rust application/platform APIs
     ↑
 cleaner-cli / cleaner-gui / future frontend
 ```
 
-GPUI is not part of the cleanup engine. A future Flutter frontend must consume the same Rust-owned behavior rather than reimplementing cleanup rules in Dart.
+GPUI is not part of the engine. A future Flutter frontend must consume the same Rust behavior instead of recreating policy in Dart.
 
-## 2. Core domain model
+## 2. Smart Scan domain flow
 
-Start with `crates/cleaner-core/src/model.rs`.
+Important core files include:
 
-Important types:
+- `crates/cleaner-core/src/model.rs`
+- `crates/cleaner-core/src/target.rs`
+- `crates/cleaner-core/src/scanner.rs`
+- `crates/cleaner-core/src/planner.rs`
+- `crates/cleaner-core/src/action_policy.rs`
+- `crates/cleaner-core/src/executor.rs`
 
-- `CleanupCategory` — shared category identity such as `UserCache`, `SystemCache`, `Xcode`, `Homebrew`, `Node`, `Docker`, and `LargeFiles`.
-- `ScanItem` — one discovered filesystem candidate with path, category, byte size, and symlink state.
-- `ScanSummary` — item count and total bytes.
-- `CleanupPlanItem` — wraps a `ScanItem` with review selection state.
-- `CleanupPlan` — reviewed set of cleanup candidates.
+Typed targets create approved `ScanRequest` values for User Cache, System Cache, Xcode, Homebrew, and Node caches.
 
-`CleanupPlan` owns frontend-neutral review operations such as:
+`FileSystemScanner` emits frontend-neutral `ScanEvent` values and does not traverse discovered symlinks. `CancellationToken` provides cooperative cancellation across worker/UI boundaries.
 
-- selected count / selected bytes
-- select all safe items
-- select/deselect by category
-- toggle by path
-
-Symlink items are intentionally prevented from becoming selected through these helpers.
-
-## 3. Typed scan targets
-
-See `crates/cleaner-core/src/target.rs`.
-
-The scanner does not rely on GPUI-provided arbitrary paths. Scan roots are constructed through typed targets such as:
-
-- `UserCacheScan`
-- `SystemCacheScan`
-- `XcodeScan`
-- `HomebrewScan`
-- `NodeScan`
-
-Each target produces a `ScanRequest` containing:
-
-- category
-- roots
-- excluded roots
-
-This keeps platform and product scanning rules in Rust rather than the frontend.
-
-## 4. Filesystem scanner and progress events
-
-See `crates/cleaner-core/src/scanner.rs`.
-
-`FileSystemScanner` recursively walks approved scan roots and emits frontend-neutral `ScanEvent` values:
-
-- `Started`
-- `ItemFound`
-- `PermissionDenied`
-- `Finished`
-- `Cancelled`
-
-The scanner uses `symlink_metadata` and does not traverse discovered symlinks.
-
-`CancellationToken` is shared by scan and cleanup execution. It is backed by an atomic flag and can be cloned across worker/UI boundaries.
-
-The GUI receives progress events, but scan ownership remains inside Rust.
-
-## 5. Protected roots and scan safety
-
-Protected broad filesystem locations are centralized in `cleaner-core` safety code and are reused by scan/execution validation.
-
-Examples of broad roots that must not become cleanup roots include locations such as `/`, `/System`, and `/Library`.
-
-A specific approved descendant such as a defined cache directory can still be scanned through a typed target.
-
-The design rule is conservative: broad or ambiguous roots fail closed.
-
-## 6. Building the cleanup plan
-
-See `crates/cleaner-core/src/planner.rs`.
-
-After scan completion, GPUI converts collected `ScanItem` values using:
+The flow is:
 
 ```text
-Planner::build(items)
-```
-
-The planner creates `CleanupPlanItem` values and leaves symlinks unselected by default.
-
-The plan is then presented to the user for review before mutation.
-
-## 7. Execution allow-list policy
-
-`ExecutionPolicy` and `AllowedRoot` also live in `planner.rs`.
-
-Destructive execution is disabled by default:
-
-```text
-ExecutionPolicy::default()
-```
-
-A caller must explicitly create an enabled policy with category-scoped allow-list roots.
-
-`AllowedRoot::new` records the requested path and pins its canonical path at policy construction time.
-
-Before each filesystem mutation, `Planner::validate_item_for_execution` revalidates the selected item:
-
-1. destructive actions must be enabled
-2. item must not be a symlink
-3. item must not be a protected broad root
-4. path must still exist
-5. path is canonicalized again
-6. matching allow-list root must have the same category
-7. allow-list root must still exist and must not be a symlink
-8. current canonical root must match the pinned canonical root
-9. item must be a descendant of the pinned root, never the root itself
-
-This validation is repeated immediately before each execution action rather than trusting the earlier review state.
-
-## 8. Category action policy
-
-See `crates/cleaner-core/src/action_policy.rs`.
-
-`CategoryActionPolicy` decides the cleanup action in Rust.
-
-Default behavior for every category is:
-
-```text
-MoveToTrash
-```
-
-Permanent delete requires explicit opt-in and is only policy-eligible for generated/cache categories:
-
-- `UserCache`
-- `Xcode`
-- `Homebrew`
-- `Node`
-
-Permanent delete is rejected for:
-
-- `SystemCache`
-- `Docker`
-- `LargeFiles`
-
-The important boundary is that a frontend does not invent this policy.
-
-The current GPUI flow deliberately uses:
-
-```text
-CategoryActionPolicy::trash_only()
-```
-
-so the UI cannot request permanent deletion.
-
-## 9. Cleanup executor
-
-See `crates/cleaner-core/src/executor.rs`.
-
-`CleanupExecutor` coordinates reviewed execution.
-
-Inputs include:
-
-- `CleanupPlan`
-- `ExecutionPolicy`
-- `CategoryActionPolicy`
-- `CancellationToken`
-- platform `CleanupBackend`
-
-For each selected item it:
-
-1. checks cancellation
-2. resolves the core action policy
-3. revalidates the item against execution safety policy
-4. invokes the appropriate backend operation
-5. records success or failure
-
-Safety failures are represented per item so an earlier successful mutation is not lost from the report if a later item fails revalidation.
-
-`ExecutionReport` exposes:
-
-- successful item count
-- failed item count
-- bytes moved to Trash
-- bytes permanently deleted
-- cancellation state
-
-Moving to Trash is deliberately not reported as reclaimed disk capacity because the data may still occupy the same filesystem until Trash is emptied.
-
-## 10. Platform backend boundary
-
-See `crates/cleaner-macos/src/lib.rs`.
-
-`SystemMacPlatform` owns macOS-specific operations.
-
-Current important behaviors include:
-
-- open Full Disk Access settings
-- reveal a path in Finder
-- move an item to Trash
-- enumerate application roots
-
-Trash integration currently uses Finder through `osascript`, passing the path as an argument rather than interpolating it into AppleScript source.
-
-### Permanent-delete safety lock
-
-The core contains category policy support for permanent delete, but the macOS backend currently refuses to perform permanent deletion.
-
-Reason: simple path-based `remove_file` / `remove_dir_all` cannot fully close the ancestor-swap TOCTOU window after validation.
-
-Permanent deletion must remain fail-closed until it can be implemented using an anchored directory descriptor / no-follow filesystem strategy that ties validation and mutation to the same filesystem identity.
-
-Do not replace this lock with another path-based recheck.
-
-## 11. GPUI Smart Scan flow
-
-See `crates/cleaner-gui/src/main.rs`.
-
-The current application flow is:
-
-```text
-Start Smart Scan
-      ↓
-typed ScanRequest values
-      ↓
-worker thread + FileSystemScanner
-      ↓
-ScanEvent channel
-      ↓
-GPUI metrics / status
-      ↓
+typed ScanRequest
+    ↓
+FileSystemScanner
+    ↓
+ScanEvent stream
+    ↓
 Planner::build
-      ↓
-Cleanup plan review
-      ↓
-Move selected to Trash
-      ↓
-CleanupExecutor on worker thread
-      ↓
+    ↓
+CleanupPlan review
+    ↓
+ExecutionPolicy + CategoryActionPolicy
+    ↓
+CleanupExecutor
+    ↓
 ExecutionReport
 ```
 
-The UI event loop is not used for filesystem scan or cleanup work.
+## 3. Cleanup safety model
 
-Messages cross worker/UI boundaries through channels and GPUI periodically drains them.
+`ExecutionPolicy::default()` disables mutation.
 
-## 12. GPUI review state
+Mutation requires explicit enabled policy plus pinned allow-list roots. Before each action, execution revalidates filesystem identity, category/root membership, protected roots, symlink state, and canonical-path stability.
 
-The review panel displays:
+GPUI uses Trash-only policy. Permanent-delete policy exists in core for selected generated/cache categories, but the macOS permanent-delete backend remains intentionally safety-locked.
 
-- selected items / total items
-- selected bytes
-- first review rows with path and size
-- selection / skipped / protected symlink state
-- select-all-safe-items
-- deselect-all
+Do not re-enable permanent deletion with path-only `remove_file` / `remove_dir_all` logic. The unresolved problem is ancestor-swap TOCTOU between validation and mutation; the acceptable future design requires anchored/no-follow filesystem mutation.
 
-Selection behavior delegates to `CleanupPlan` rather than duplicating selection safety inside GPUI.
+## 4. GPUI Smart Care
 
-## 13. GPUI execution wiring
+See `crates/cleaner-gui/src/main.rs` and `crates/cleaner-gui/src/execution.rs`.
 
-The M2 product-facing execution wiring is on `feature/m2-gpui-execution` / PR #11.
+GPUI owns presentation and transient state only. Filesystem scan and cleanup execution run off the event loop and communicate through channels.
 
-Important rules:
+Current Smart Care behavior:
 
-- execution policy roots come from the exact typed scan requests used for that scan
-- GPUI uses `CategoryActionPolicy::trash_only()`
-- cleanup work runs away from the GPUI event loop
-- cleanup can be cancelled using the shared `CancellationToken`
-- final report is displayed to the user
-- after an execution attempt the plan is discarded
-- another mutation requires a fresh scan
+- start/cancel Smart Scan
+- live category metrics
+- permission-denied status
+- cleanup-plan review
+- select/deselect safe items through core plan APIs
+- Trash-only execution
+- execution cancellation and report
+- reviewed plan discarded after execution so another mutation requires a fresh scan
 
-Discarding the plan prevents repeated execution against stale filesystem observations.
+## 5. Application inventory and metadata
 
-## 14. CLI as an architecture check
+The uninstall flow begins in shared Rust APIs.
 
-`cleaner-cli` consumes core scanner APIs without GPUI.
+Inventory discovers applications under user/local/system application roots and treats discovered `.app` bundles as leaves. Directory symlinks are not followed.
 
-This is intentional. If new core cleanup logic starts requiring GUI-specific types, the dependency direction has been broken.
+Metadata includes bundle identifier/version data and signing TeamIdentifier when available. Missing metadata or unsigned applications remain visible; TeamIdentifier is context only and is never sufficient ownership evidence by itself.
 
-The CLI should remain a lightweight proof that scanning and policy remain frontend-neutral.
+CLI exposes the same inventory path through `dxtr-cleaner apps`.
 
-## 15. Formatting and CI
+## 6. Related-file evidence and confidence
 
-The repository quality gate is defined through the `Makefile`.
+Related-file matching is evidence-driven and read-only.
 
-Important commands:
+Confidence semantics:
+
+- High — exact bundle-identifier-derived ownership path
+- Medium — bundle-prefixed host-specific preference evidence
+- Low — exact display-name directory evidence
+
+Medium/Low evidence is review-only. Symlink candidates are excluded. Duplicate paths retain the strongest evidence.
+
+CLI exposes the matcher through `dxtr-cleaner related <bundle-id>`.
+
+## 7. System-app protection
+
+Protection policy lives in `cleaner-core`.
+
+Applications fail closed when classified as system applications, located under protected macOS system application roots, or using the exact `com.apple` namespace.
+
+Ordinary third-party apps under `/Applications` remain eligible for reviewed uninstall.
+
+Frontends render typed protection results rather than recreating protection rules.
+
+## 8. Orphan discovery
+
+Orphan discovery is frontend-neutral and read-only.
+
+It uses the complete installed-application inventory as the authoritative live bundle-ID set. If inventory is partial, orphan classification fails closed and returns no destructive candidate set.
+
+Only safe reverse-DNS-shaped entries in approved Library locations are considered; symlinks, live bundle IDs, and the `com.apple` namespace are excluded.
+
+CLI exposes the same path through `dxtr-cleaner orphans`.
+
+## 9. Reviewed uninstall execution
+
+The GPUI uninstaller is a separate product flow from Smart Care.
+
+The Rust-owned flow is:
+
+```text
+ApplicationInventory
+    ↓
+application protection
+    ↓
+related-file evidence
+    ↓
+UninstallPlan review
+    ↓
+fresh evidence + pinned execution roots
+    ↓
+Trash-only uninstall executor
+    ↓
+UninstallExecutionReport
+```
+
+High-confidence related data starts selected. Medium/Low review-only evidence requires explicit opt-in. Protected applications cannot execute.
+
+Execution refreshes application/evidence state and revalidates safety roots immediately before mutation. Related data is trashed before the required application bundle so cancellation preferentially leaves the app installed.
+
+After an attempt, the reviewed plan and cached application list are discarded to prevent stale reuse.
+
+## 10. macOS platform boundary
+
+See `crates/cleaner-macos/src/lib.rs` and focused modules in that crate.
+
+macOS-native responsibilities include:
+
+- Full Disk Access status and System Settings deep link
+- Finder reveal
+- move-to-Trash backend
+- installed application discovery helpers
+- LaunchAgent scheduling
+
+Paths passed to Finder/AppleScript are arguments, not interpolated script source.
+
+Frontend code should call platform APIs rather than execute native commands directly.
+
+## 11. LaunchAgent scheduling foundation
+
+See `crates/cleaner-macos/src/launch_agent.rs`.
+
+Scheduling is deliberately read-only. The generated LaunchAgent runs only:
+
+```text
+dxtr-cleaner scan --category user
+```
+
+It cannot schedule Trash, uninstall, or permanent-delete mutation.
+
+Important lower-level APIs validate label/path safety, render the plist, install/bootstrap it, inspect status, and uninstall/bootout it.
+
+The plist path is under the user's LaunchAgents directory and logs are under `~/Library/Logs/DxtrCleaner`.
+
+## 12. Frontend-ready scheduling coordinator
+
+`LaunchAgentCoordinator` is the scheduling surface intended for desktop frontends.
+
+It owns:
+
+- HOME validation
+- bundled CLI path resolution
+- Daily interval policy
+- LaunchAgent label/path details
+- status inspection
+- enable/disable operations
+- stale executable detection
+- App Translocation safety behavior
+
+Frontends therefore do not know `launchctl`, plist layout, label strings, interval values, or bundle CLI structure.
+
+Durability behavior:
+
+- scheduled CLI is the sibling `Contents/MacOS/dxtr-cleaner`
+- enabling/repairing is rejected when the GUI is running from App Translocation
+- status/disable still work from a translocated launch so an existing schedule can be stopped
+- if the application is moved/renamed after scheduling, status reports the configuration as stale rather than healthy
+
+This boundary is suitable for reuse by a future frontend without moving scheduling policy into that frontend.
+
+## 13. GPUI Scheduling Settings
+
+See:
+
+- `crates/cleaner-gui/src/main.rs`
+- `crates/cleaner-gui/src/scheduling.rs`
+
+`scheduling.rs` owns worker orchestration around `LaunchAgentCoordinator`.
+
+The GPUI Settings page supports:
+
+- load status
+- Enable Daily Smart Scan
+- Disable
+- Repair stale app-location configuration
+- Disabled / Enabled / Needs repair / Loading / Error states
+
+Scheduling filesystem/native command work does not run on the GPUI event loop.
+
+GPUI interprets coordinator results for presentation only; it does not construct plist paths or command lines.
+
+## 14. Packaging
+
+See `scripts/macos/package.sh` and `docs/M4_PACKAGING.md`.
+
+The package script builds a release `.app` containing both:
+
+- GPUI executable
+- bundled `dxtr-cleaner` CLI
+
+This in-bundle CLI is necessary so the LaunchAgent can target a stable path inside an installed application bundle.
+
+The script supports Developer ID signing with hardened runtime and timestamping. If no signing identity is provided, ad-hoc signing is only a local smoke-test mode and is not release evidence.
+
+The app bundle metadata is created with `plutil`, avoiding unsafe raw plist interpolation.
+
+## 15. Notarization
+
+See `scripts/macos/notarize.sh`.
+
+The release path is:
+
+```text
+signed app + ZIP
+    ↓
+notarytool submit --wait
+    ↓
+stapler staple
+    ↓
+stapler validate
+    ↓
+spctl assessment
+    ↓
+rebuild final ZIP containing stapled app
+```
+
+Credentials stay external through the configured notary keychain profile.
+
+Do not mark notarization complete from script existence alone; a real accepted Apple submission is required.
+
+## 16. Homebrew cask generation
+
+See `scripts/macos/generate_cask.sh` and `docs/HOMEBREW_CASK.md`.
+
+The generator requires:
+
+- explicit release version
+- exact 64-hex SHA-256
+- HTTPS release URL
+
+It writes `Casks/dxtr-cleaner.rb` and validates Ruby syntax.
+
+Generated Ruby values are serialized in non-interpolating literals so input such as `#{...}` cannot execute when Homebrew loads the cask.
+
+The cask must reference the exact final notarized ZIP, not a placeholder or pre-notarization artifact.
+
+## 17. Release verification gate
+
+See `docs/M4_RELEASE_VERIFICATION.md`.
+
+The remaining M4 work is physical release verification:
+
+1. Developer ID signed build
+2. code-signature/hardened-runtime verification
+3. accepted notarization
+4. staple validation
+5. Gatekeeper assessment
+6. fresh-machine launch smoke test
+7. publish exact final ZIP
+8. final SHA-256
+9. generate cask from that artifact
+10. Homebrew install/uninstall smoke test
+
+M4 packaging/Homebrew roadmap items remain open until this evidence exists.
+
+## 18. Formatting and CI
+
+Quality commands:
 
 ```bash
 make format
@@ -314,91 +327,63 @@ make prepush
 make ci
 ```
 
-`make prepush` performs formatting before verification for normal local git workflows.
+`make prepush` performs real formatting before verification locally.
 
-Because connector/API file writes do not execute local git hooks, development branches also use `.github/workflows/auto-format.yml` to run real `cargo fmt --all` and commit formatter changes back to the branch when necessary.
+Development branches also have an auto-format workflow because connector/API writes do not run local hooks. The workflow may push `chore: apply rustfmt` as `github-actions[bot]`.
 
-CI still runs the non-mutating verification gate and remains authoritative.
+Important GitHub behavior: a workflow push made with the repository `GITHUB_TOKEN` does not recursively trigger arbitrary follow-on workflows. Therefore always verify that a real CI run exists for the **final PR head** before merging.
 
-## 16. GPUI dependency policy
+## 19. GPUI dependency policy
 
-GPUI and `gpui_platform` are pinned to this Zed commit:
+GPUI and `gpui_platform` are pinned to Zed commit:
 
 ```text
 b05f40c5546b47bcf9561136dc0fcdcd9968cb63
 ```
 
-Do not float this dependency during unrelated feature work. Upgrade GPUI only in a dedicated dependency PR with GUI validation.
+Do not float the dependency during unrelated work. Upgrade in a dedicated PR with GUI validation.
 
-## 17. Frontend portability
+## 20. Frontend and Windows portability
 
-The current product frontend is GPUI on macOS.
+The current product frontend remains GPUI on macOS.
 
-The Rust engine must remain independent from that decision so a future Flutter frontend can be introduced without rewriting:
+Future Windows support and optional Flutter desktop work must preserve the Rust ownership boundary. Shared scan, policy, planning, safety, execution, report, and scheduling semantics should not be rewritten per frontend.
 
-- scan rules
-- cleanup planning
-- selection safety
-- action policy
-- execution safety
-- cleanup execution
-- reports
-- cancellation
+Windows-specific behavior belongs behind Windows adapters/providers; Flutter, if adopted later, should own only presentation/state plus generated bindings to stable Rust APIs.
 
-A future Dart layer should own presentation/state only and call into stable Rust APIs/FFI.
+## 21. Where to start when changing code
 
-## 18. Windows portability
+Smart Scan behavior:
 
-Windows support is planned after the macOS flow stabilizes.
+1. `cleaner-core` target/scanner model
+2. core tests
+3. GPUI only for presentation
 
-Expected Windows-specific work belongs in adapters/providers:
+Cleanup safety:
 
-- Windows cleanup roots
-- Recycle Bin integration
-- permission/elevation handling
-- protected-root policy
-- packaging and signing
+1. core safety/planner/action policy/executor
+2. platform backend after policy is explicit
+3. frontend last
 
-The shared core model and execution semantics should not be rewritten for Windows.
+Uninstaller behavior:
 
-## 19. Where to start when modifying the project
+1. core inventory/evidence/protection/plan/execution APIs
+2. macOS evidence/adapters
+3. CLI validation surface
+4. GPUI presentation
 
-For scan behavior:
+macOS scheduling:
 
-1. `cleaner-core/src/target.rs`
-2. `cleaner-core/src/scanner.rs`
-3. scanner/core tests
-4. GUI only for presentation
+1. `cleaner-macos/src/launch_agent.rs`
+2. keep coordinator API frontend-neutral
+3. `cleaner-gui/src/scheduling.rs` for worker orchestration
+4. `main.rs` only for UI state/rendering
 
-For cleanup safety:
+Release packaging:
 
-1. `cleaner-core/src/safety.rs`
-2. `cleaner-core/src/planner.rs`
-3. `cleaner-core/src/action_policy.rs`
-4. `cleaner-core/src/executor.rs`
-5. platform adapter only after core policy is explicit
+1. `scripts/macos/package.sh`
+2. `scripts/macos/notarize.sh`
+3. `scripts/macos/generate_cask.sh`
+4. `docs/M4_RELEASE_VERIFICATION.md`
 
-For macOS integration:
-
-1. `cleaner-macos/src/lib.rs`
-2. expose only the minimum frontend-neutral adapter contract needed
-
-For UI changes:
-
-1. `cleaner-gui/src/main.rs`
-2. do not copy core policy into UI conditionals
-
-## 20. Current milestone boundary
-
-PR #11 completes the M2 product flow with Trash-only GPUI execution.
-
-After M2, the next planned milestone is M3 App Uninstaller:
-
-- installed app inventory
-- bundle/team metadata
-- related-file matcher
-- confidence tiers
-- system-app protection
-- orphan finder
-
-The same safety principle continues into M3: discovery and confidence remain separate from destructive execution, and execution continues through the shared core policy/executor boundary.
+Do not close a release gate because its automation script exists; close it only from real artifact evidence.
