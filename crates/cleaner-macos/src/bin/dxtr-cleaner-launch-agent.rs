@@ -129,4 +129,13 @@ mod tests {
             "--interval must be an integer number of seconds"
         );
     }
+
+    #[test]
+    fn executable_argument_requires_a_following_path() {
+        let args = vec!["install".into(), "--executable".into()];
+        assert_eq!(
+            required_path_arg(&args, "--executable").unwrap_err(),
+            "--executable requires a path"
+        );
+    }
 }
