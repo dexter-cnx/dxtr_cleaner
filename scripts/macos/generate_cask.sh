@@ -5,6 +5,7 @@ VERSION="${VERSION:-}"
 SHA256="${SHA256:-}"
 URL="${URL:-}"
 OUTPUT="${OUTPUT:-Casks/dxtr-cleaner.rb}"
+RELEASE_URL_PREFIX="https://github.com/dexter-cnx/dxtr_cleaner/releases/download/"
 
 if [[ -z "${VERSION}" ]]; then
   echo "VERSION is required" >&2
@@ -14,8 +15,8 @@ if [[ ! "${SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
   echo "SHA256 must be a 64-character hexadecimal digest" >&2
   exit 1
 fi
-if [[ ! "${URL}" =~ ^https:// ]]; then
-  echo "URL must use https://" >&2
+if [[ "${URL}" != "${RELEASE_URL_PREFIX}"* ]]; then
+  echo "URL must point to a dxtr_cleaner GitHub release asset" >&2
   exit 1
 fi
 
@@ -26,12 +27,14 @@ ruby_single_quote() {
   printf '%s' "$value"
 }
 
+NORMALIZED_SHA256="$(printf '%s' "${SHA256}" | tr '[:upper:]' '[:lower:]')"
+
 mkdir -p "$(dirname "${OUTPUT}")"
 
 cat > "${OUTPUT}" <<CASK
 cask "dxtr-cleaner" do
   version '$(ruby_single_quote "${VERSION}")'
-  sha256 '$(ruby_single_quote "${SHA256,,}")'
+  sha256 '$(ruby_single_quote "${NORMALIZED_SHA256}")'
 
   url '$(ruby_single_quote "${URL}")',
       verified: "github.com/dexter-cnx/dxtr_cleaner/"
