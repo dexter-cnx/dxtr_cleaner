@@ -27,7 +27,6 @@ use uninstaller::{
 const MAX_EVENTS_PER_TICK: usize = 128;
 const MAX_REVIEW_ROWS: usize = 10;
 const MAX_APP_ROWS: usize = 14;
-const MAX_UNINSTALL_ROWS: usize = 12;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ViewMode {
@@ -176,6 +175,16 @@ impl CleanerApp {
         }
     }
 
+    fn destructive_operation_active(&self) -> bool {
+        matches!(
+            self.execution_state,
+            ExecutionState::Executing | ExecutionState::Cancelling
+        ) || matches!(
+            self.uninstall_state,
+            UninstallState::Executing | UninstallState::Cancelling
+        )
+    }
+
     fn reset_metrics(&mut self) {
         self.user_cache = Metric::default();
         self.system_cache = Metric::default();
@@ -240,10 +249,7 @@ impl CleanerApp {
 
     fn start_scan(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(self.state, ScanState::Scanning | ScanState::Cancelling)
-            || matches!(
-                self.execution_state,
-                ExecutionState::Executing | ExecutionState::Cancelling
-            )
+            || self.destructive_operation_active()
         {
             return;
         }
@@ -343,10 +349,7 @@ impl CleanerApp {
     }
 
     fn start_cleanup(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if matches!(
-            self.execution_state,
-            ExecutionState::Executing | ExecutionState::Cancelling
-        ) {
+        if self.destructive_operation_active() {
             return;
         }
         let Some(plan) = self.cleanup_plan.clone() else {
@@ -508,6 +511,9 @@ impl CleanerApp {
         if matches!(
             self.uninstall_state,
             UninstallState::Loading | UninstallState::Executing | UninstallState::Cancelling
+        ) || matches!(
+            self.execution_state,
+            ExecutionState::Executing | ExecutionState::Cancelling
         ) {
             return;
         }
@@ -577,7 +583,7 @@ impl CleanerApp {
     }
 
     fn start_uninstall(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.uninstall_state != UninstallState::Review {
+        if self.uninstall_state != UninstallState::Review || self.destructive_operation_active() {
             return;
         }
         let Some(plan) = self.uninstall_plan.clone() else {
@@ -668,10 +674,17 @@ impl Render for CleanerApp {
             .bg(rgb(0x0f1115))
             .text_color(rgb(0xe8eaed))
             .child(self.sidebar(cx))
-            .child(match self.view {
-                ViewMode::SmartCare => self.smart_care_page(cx),
-                ViewMode::Uninstaller => self.uninstaller_page(cx),
-            })
+            .child(
+                div()
+                    .id("content-pane-scroll")
+                    .flex_1()
+                    .h_full()
+                    .overflow_y_scroll()
+                    .child(match self.view {
+                        ViewMode::SmartCare => self.smart_care_page(cx),
+                        ViewMode::Uninstaller => self.uninstaller_page(cx),
+                    }),
+            )
     }
 }
 
@@ -722,53 +735,53 @@ impl CleanerApp {
             None => self.state.label().to_string(),
         };
 
-        let mut page =
-            content_shell("Smart Care")
-                .child(
-                    card()
-                        .child(div().text_xl().child("Reclaim your Mac"))
-                        .child(div().text_color(rgb(0xa9afb8)).child(status_text))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_3()
-                                .child(
-                                    button(
-                                        "scan",
-                                        if scan_active {
-                                            self.state.label()
-                                        } else {
-                                            "Start Smart Scan"
-                                        },
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _, window, cx| {
-                                            if !matches!(
-                                                this.state,
-                                                ScanState::Scanning | ScanState::Cancelling
-                                            ) {
-                                                this.start_scan(window, cx);
-                                            }
-                                        },
-                                    )),
+        let mut page = content_shell("Smart Care")
+            .child(
+                card()
+                    .child(div().text_xl().child("Reclaim your Mac"))
+                    .child(div().text_color(rgb(0xa9afb8)).child(status_text))
+                    .child(
+                        div()
+                            .flex()
+                            .gap_3()
+                            .child(
+                                button(
+                                    "scan",
+                                    if scan_active {
+                                        self.state.label()
+                                    } else {
+                                        "Start Smart Scan"
+                                    },
                                 )
-                                .when(scan_active, |row| {
-                                    row.child(secondary_button("cancel", "Cancel").on_click(
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    if !matches!(
+                                        this.state,
+                                        ScanState::Scanning | ScanState::Cancelling
+                                    ) && !this.destructive_operation_active()
+                                    {
+                                        this.start_scan(window, cx);
+                                    }
+                                })),
+                            )
+                            .when(scan_active, |row| {
+                                row.child(
+                                    secondary_button("cancel", "Cancel").on_click(
                                         cx.listener(|this, _, _, cx| this.cancel_scan(cx)),
-                                    ))
-                                }),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .gap_4()
-                        .child(metric_card("User Cache", self.user_cache))
-                        .child(metric_card("System Cache", self.system_cache))
-                        .child(metric_card("Xcode", self.xcode))
-                        .child(metric_card("Homebrew", self.homebrew))
-                        .child(metric_card("Node", self.node)),
-                );
+                                    ),
+                                )
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_4()
+                    .child(metric_card("User Cache", self.user_cache))
+                    .child(metric_card("System Cache", self.system_cache))
+                    .child(metric_card("Xcode", self.xcode))
+                    .child(metric_card("Homebrew", self.homebrew))
+                    .child(metric_card("Node", self.node)),
+            );
 
         if let Some(plan) = &self.cleanup_plan {
             let rows = plan
@@ -809,11 +822,13 @@ impl CleanerApp {
                                             this.set_all_review_items(true, cx);
                                         })),
                                 )
-                                .child(secondary_button("deselect-all", "Deselect all").on_click(
-                                    cx.listener(|this, _, _, cx| {
-                                        this.set_all_review_items(false, cx);
-                                    }),
-                                )),
+                                .child(
+                                    secondary_button("deselect-all", "Deselect all").on_click(
+                                        cx.listener(|this, _, _, cx| {
+                                            this.set_all_review_items(false, cx);
+                                        }),
+                                    ),
+                                ),
                         )
                     })
                     .children(rows)
@@ -824,13 +839,23 @@ impl CleanerApp {
                                 .child(format!("+ {hidden} more item(s)")),
                         )
                     })
-                    .when(selected > 0 && !execution_active, |panel| {
-                        panel.child(button("execute-trash", "Move selected to Trash").on_click(
-                            cx.listener(|this, _, window, cx| {
-                                this.start_cleanup(window, cx);
-                            }),
-                        ))
-                    })
+                    .when(
+                        selected > 0
+                            && !execution_active
+                            && !matches!(
+                                self.uninstall_state,
+                                UninstallState::Executing | UninstallState::Cancelling
+                            ),
+                        |panel| {
+                            panel.child(
+                                button("execute-trash", "Move selected to Trash").on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        this.start_cleanup(window, cx);
+                                    }),
+                                ),
+                            )
+                        },
+                    )
                     .when(execution_active, |panel| {
                         panel.child(
                             secondary_button("cancel-cleanup", "Cancel cleanup")
@@ -865,6 +890,10 @@ impl CleanerApp {
     }
 
     fn uninstaller_page(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let cleanup_active = matches!(
+            self.execution_state,
+            ExecutionState::Executing | ExecutionState::Cancelling
+        );
         let mut page = content_shell("Uninstaller").child(
             card()
                 .child(div().text_xl().child("Applications"))
@@ -885,8 +914,16 @@ impl CleanerApp {
                 ),
         );
 
+        if cleanup_active {
+            page = page.child(info_card(
+                "Smart Care cleanup is currently running. Uninstall execution is locked until it finishes or is cancelled.",
+            ));
+        }
+
         if let Some(error) = &self.uninstall_error {
-            page = page.child(card().child(div().text_color(rgb(0xffa6a6)).child(error.clone())));
+            page = page.child(
+                card().child(div().text_color(rgb(0xffa6a6)).child(error.clone())),
+            );
         }
 
         if self.uninstall_plan.is_none() && !self.applications.is_empty() {
@@ -941,7 +978,6 @@ impl CleanerApp {
             let rows = plan
                 .items()
                 .iter()
-                .take(MAX_UNINSTALL_ROWS)
                 .map(|item| {
                     let path = item.path().to_path_buf();
                     let label = if item.is_required() {
@@ -958,14 +994,10 @@ impl CleanerApp {
                     let row = review_row(
                         item.path().display().to_string(),
                         format!("{:?} · {}", item.confidence(), label),
-                        if item.is_selectable() {
-                            "Toggle"
-                        } else {
-                            "Locked"
-                        },
+                        if item.is_selectable() { "Toggle" } else { "Locked" },
                     )
                     .id(format!("uninstall-item-{}", item.path().display()));
-                    if item.is_selectable() {
+                    if item.is_selectable() && !cleanup_active {
                         row.cursor_pointer()
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 this.toggle_uninstall_item(&path, cx);
@@ -975,7 +1007,6 @@ impl CleanerApp {
                     }
                 })
                 .collect::<Vec<_>>();
-            let hidden = plan.items().len().saturating_sub(MAX_UNINSTALL_ROWS);
             let selected = plan.selected_count();
             page = page.child(
                 card()
@@ -990,17 +1021,13 @@ impl CleanerApp {
                             .child(if protected {
                                 "Protected Apple/system application. Execution is locked."
                             } else {
-                                "High-confidence related files default on. Medium/Low evidence requires explicit opt-in."
+                                "Every reviewed path is shown below. High-confidence related files default on; Medium/Low evidence requires explicit opt-in."
                             }),
                     )
                     .children(rows)
-                    .when(hidden > 0, |panel| {
-                        panel.child(div().text_color(rgb(0xa9afb8)).child(format!(
-                            "+ {hidden} more reviewed item(s)"
-                        )))
-                    })
                     .when(
                         !protected
+                            && !cleanup_active
                             && selected > 0
                             && self.uninstall_state == UninstallState::Review,
                         |panel| {
@@ -1057,22 +1084,28 @@ impl CleanerApp {
 }
 
 fn content_shell(title: &'static str) -> gpui::Div {
-    div().flex().flex_col().flex_1().p_8().gap_6().child(
-        div()
-            .flex()
-            .items_center()
-            .justify_between()
-            .child(div().text_2xl().child(title))
-            .child(
-                div()
-                    .px_3()
-                    .py_1()
-                    .rounded_full()
-                    .bg(rgb(0x173624))
-                    .text_color(rgb(0x83e6a2))
-                    .child("Safe mode · Trash only"),
-            ),
-    )
+    div()
+        .flex()
+        .flex_col()
+        .flex_1()
+        .p_8()
+        .gap_6()
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(div().text_2xl().child(title))
+                .child(
+                    div()
+                        .px_3()
+                        .py_1()
+                        .rounded_full()
+                        .bg(rgb(0x173624))
+                        .text_color(rgb(0x83e6a2))
+                        .child("Safe mode · Trash only"),
+                ),
+        )
 }
 
 fn card() -> gpui::Div {
