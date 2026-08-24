@@ -44,12 +44,6 @@ impl LaunchAgentCoordinator {
         if !current_executable.is_absolute() {
             return Err("current executable path must be absolute".into());
         }
-        if is_app_translocation_path(&current_executable) {
-            return Err(
-                "scheduled scans require Dxtr Cleaner to run from a durable installed location; App Translocation paths are not supported"
-                    .into(),
-            );
-        }
         let parent = current_executable
             .parent()
             .ok_or_else(|| "current executable path has no parent directory".to_string())?;
@@ -77,6 +71,12 @@ impl LaunchAgentCoordinator {
     }
 
     pub fn enable_daily(&self) -> Result<PathBuf, String> {
+        if is_app_translocation_path(&self.cleaner_executable) {
+            return Err(
+                "scheduled scans require Dxtr Cleaner to run from a durable installed location; App Translocation paths are not supported"
+                    .into(),
+            );
+        }
         let metadata = fs::symlink_metadata(&self.cleaner_executable)
             .map_err(|error| format!("scheduled cleaner executable is unavailable: {error}"))?;
         if metadata.file_type().is_symlink() || !metadata.is_file() {
@@ -415,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn coordinator_rejects_relative_and_translocated_process_paths() {
+    fn coordinator_rejects_relative_process_paths_but_allows_translocated_inspection() {
         assert!(
             LaunchAgentCoordinator::for_current_process(
                 PathBuf::from("Users/example"),
@@ -430,16 +430,15 @@ mod tests {
             )
             .is_err()
         );
-        assert!(
-            LaunchAgentCoordinator::for_current_process(
-                PathBuf::from("/Users/example"),
-                PathBuf::from(
-                    "/private/var/folders/x/AppTranslocation/ABC/d/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner",
-                ),
-            )
-            .unwrap_err()
-            .contains("durable")
-        );
+
+        let translocated = LaunchAgentCoordinator::for_current_process(
+            PathBuf::from("/Users/example"),
+            PathBuf::from(
+                "/private/var/folders/x/AppTranslocation/ABC/d/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner",
+            ),
+        )
+        .expect("translocated launches must still be able to inspect or disable scheduling");
+        assert!(translocated.enable_daily().unwrap_err().contains("durable"));
     }
 
     #[test]
