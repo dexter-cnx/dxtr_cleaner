@@ -6,18 +6,32 @@ BUNDLE_ID="${BUNDLE_ID:-com.cnxdev.dxtr-cleaner}"
 VERSION="${VERSION:-0.1.0}"
 BUILD_NUMBER="${BUILD_NUMBER:-1}"
 DIST_DIR="${DIST_DIR:-dist}"
+TARGET_DIR="${CARGO_TARGET_DIR:-target}"
 APP_PATH="${DIST_DIR}/${APP_NAME}.app"
 CONTENTS_DIR="${APP_PATH}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
-GUI_BINARY="target/release/dxtr-cleaner-gui"
-CLI_BINARY="target/release/dxtr-cleaner"
+PLIST_PATH="${CONTENTS_DIR}/Info.plist"
+GUI_BINARY="${TARGET_DIR}/release/dxtr-cleaner-gui"
+CLI_BINARY="${TARGET_DIR}/release/dxtr-cleaner"
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
   echo "macOS packaging requires macOS" >&2
   exit 1
 fi
 
+if [[ "${APP_NAME}" == */* || -z "${APP_NAME}" ]]; then
+  echo "APP_NAME must be a non-empty file name without '/'" >&2
+  exit 1
+fi
+
 cargo build --release -p cleaner-gui -p cleaner-cli
+
+for binary in "${GUI_BINARY}" "${CLI_BINARY}"; do
+  if [[ ! -f "${binary}" ]]; then
+    echo "expected release binary not found: ${binary}" >&2
+    exit 1
+  fi
+done
 
 rm -rf "${APP_PATH}"
 mkdir -p "${MACOS_DIR}"
@@ -25,32 +39,17 @@ cp "${GUI_BINARY}" "${MACOS_DIR}/${APP_NAME}"
 cp "${CLI_BINARY}" "${MACOS_DIR}/dxtr-cleaner"
 chmod +x "${MACOS_DIR}/${APP_NAME}" "${MACOS_DIR}/dxtr-cleaner"
 
-cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleDisplayName</key>
-  <string>${APP_NAME}</string>
-  <key>CFBundleExecutable</key>
-  <string>${APP_NAME}</string>
-  <key>CFBundleIdentifier</key>
-  <string>${BUNDLE_ID}</string>
-  <key>CFBundleInfoDictionaryVersion</key>
-  <string>6.0</string>
-  <key>CFBundleName</key>
-  <string>${APP_NAME}</string>
-  <key>CFBundlePackageType</key>
-  <string>APPL</string>
-  <key>CFBundleShortVersionString</key>
-  <string>${VERSION}</string>
-  <key>CFBundleVersion</key>
-  <string>${BUILD_NUMBER}</string>
-  <key>NSHighResolutionCapable</key>
-  <true/>
-</dict>
-</plist>
-PLIST
+# Build Info.plist with plist-aware tooling so configurable metadata is escaped safely.
+plutil -create xml1 "${PLIST_PATH}"
+plutil -insert CFBundleDisplayName -string "${APP_NAME}" "${PLIST_PATH}"
+plutil -insert CFBundleExecutable -string "${APP_NAME}" "${PLIST_PATH}"
+plutil -insert CFBundleIdentifier -string "${BUNDLE_ID}" "${PLIST_PATH}"
+plutil -insert CFBundleInfoDictionaryVersion -string "6.0" "${PLIST_PATH}"
+plutil -insert CFBundleName -string "${APP_NAME}" "${PLIST_PATH}"
+plutil -insert CFBundlePackageType -string "APPL" "${PLIST_PATH}"
+plutil -insert CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
+plutil -insert CFBundleVersion -string "${BUILD_NUMBER}" "${PLIST_PATH}"
+plutil -insert NSHighResolutionCapable -bool true "${PLIST_PATH}"
 
 if [[ -n "${SIGNING_IDENTITY:-}" ]]; then
   codesign --force --options runtime --timestamp --sign "${SIGNING_IDENTITY}" "${MACOS_DIR}/dxtr-cleaner"
@@ -64,7 +63,7 @@ else
 fi
 
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
-plutil -lint "${CONTENTS_DIR}/Info.plist"
+plutil -lint "${PLIST_PATH}"
 
 rm -f "${DIST_DIR}/${APP_NAME}.zip"
 ditto -c -k --keepParent "${APP_PATH}" "${DIST_DIR}/${APP_NAME}.zip"
