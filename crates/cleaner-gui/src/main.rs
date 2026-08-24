@@ -1,4 +1,5 @@
 mod execution;
+mod scheduling;
 mod uninstaller;
 
 use std::{
@@ -15,11 +16,13 @@ use cleaner_core::{
     NodeScan, Planner, ScanEvent, ScanItem, ScanRequest, Scanner, SystemCacheScan,
     UninstallExecutionReport, UninstallPlan, UserCacheScan, XcodeScan,
 };
+use cleaner_macos::launch_agent::LaunchAgentCoordinatorStatus;
 use execution::{ExecutionMessage, policy_from_requests, spawn_trash_only_execution};
 use gpui::{
     App, Bounds, Context, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb, size,
 };
 use gpui_platform::application;
+use scheduling::{SchedulingMessage, spawn_set_enabled, spawn_status};
 use uninstaller::{
     InventoryMessage, PlanMessage, UninstallMessage, spawn_inventory, spawn_plan, spawn_uninstall,
 };
@@ -31,6 +34,7 @@ const MAX_REVIEW_ROWS: usize = 10;
 enum ViewMode {
     SmartCare,
     Uninstaller,
+    Settings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -162,6 +166,9 @@ struct CleanerApp {
     uninstall_plan: Option<UninstallPlan>,
     uninstall_report: Option<UninstallExecutionReport>,
     uninstall_cancellation: Option<CancellationToken>,
+    scheduling_status: Option<LaunchAgentCoordinatorStatus>,
+    scheduling_busy: bool,
+    scheduling_error: Option<String>,
 }
 
 impl CleanerApp {
@@ -192,6 +199,9 @@ impl CleanerApp {
             uninstall_plan: None,
             uninstall_report: None,
             uninstall_cancellation: None,
+            scheduling_status: None,
+            scheduling_busy: false,
+            scheduling_error: None,
         }
     }
 
@@ -473,6 +483,84 @@ impl CleanerApp {
         }
     }
 
+    fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.view = ViewMode::Settings;
+        if self.scheduling_status.is_none() && !self.scheduling_busy {
+            self.load_scheduling_status(window, cx);
+        } else {
+            cx.notify();
+        }
+    }
+
+    fn load_scheduling_status(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.scheduling_busy {
+            return;
+        }
+        self.scheduling_busy = true;
+        self.scheduling_error = None;
+        let rx = spawn_status();
+        self.poll_scheduling(rx, window, cx);
+    }
+
+    fn set_daily_schedule(&mut self, enabled: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.scheduling_busy {
+            return;
+        }
+        self.scheduling_busy = true;
+        self.scheduling_error = None;
+        let rx = spawn_set_enabled(enabled);
+        self.poll_scheduling(rx, window, cx);
+    }
+
+    fn poll_scheduling(
+        &mut self,
+        rx: mpsc::Receiver<SchedulingMessage>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let entity = cx.entity();
+        window
+            .spawn(cx, async move |cx| {
+                loop {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(50))
+                        .await;
+                    match rx.try_recv() {
+                        Ok(
+                            SchedulingMessage::Loaded(result) | SchedulingMessage::Updated(result),
+                        ) => {
+                            entity.update(cx, |this, cx| {
+                                this.scheduling_busy = false;
+                                match result {
+                                    Ok(status) => {
+                                        this.scheduling_status = Some(status);
+                                        this.scheduling_error = None;
+                                    }
+                                    Err(error) => {
+                                        this.scheduling_error = Some(error);
+                                    }
+                                }
+                                cx.notify();
+                            });
+                            break;
+                        }
+                        Err(TryRecvError::Empty) => {}
+                        Err(TryRecvError::Disconnected) => {
+                            entity.update(cx, |this, cx| {
+                                this.scheduling_busy = false;
+                                this.scheduling_error =
+                                    Some("scheduling worker disconnected".into());
+                                cx.notify();
+                            });
+                            break;
+                        }
+                    }
+                }
+            })
+            .detach();
+        cx.notify();
+    }
+
     fn load_applications(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(
             self.uninstall_state,
@@ -710,6 +798,7 @@ impl Render for CleanerApp {
                     .child(match self.view {
                         ViewMode::SmartCare => self.smart_care_page(cx),
                         ViewMode::Uninstaller => self.uninstaller_page(cx),
+                        ViewMode::Settings => self.settings_page(cx),
                     }),
             )
     }
@@ -743,7 +832,14 @@ impl CleanerApp {
                     })),
             )
             .child(nav_item("Orphans", false))
-            .child(nav_item("Settings", false))
+            .child(
+                nav_item("Settings", self.view == ViewMode::Settings)
+                    .id("nav-settings")
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_settings(window, cx);
+                    })),
+            )
     }
 
     fn smart_care_page(&self, cx: &mut Context<Self>) -> gpui::Div {
@@ -1157,6 +1253,71 @@ impl CleanerApp {
         page.child(info_card(
             "Every execution attempt refreshes application inventory and related-file evidence, re-pins safety roots, then discards the reviewed plan. Permanent deletion is not available.",
         ))
+    }
+
+    fn settings_page(&self, cx: &mut Context<Self>) -> gpui::Div {
+        let current_enabled = self
+            .scheduling_status
+            .as_ref()
+            .is_some_and(|status| status.installed && status.configured_for_current_executable);
+        let stale = self
+            .scheduling_status
+            .as_ref()
+            .is_some_and(|status| status.installed && !status.configured_for_current_executable);
+        let status_text = if self.scheduling_busy {
+            "Checking scheduled scan…".to_string()
+        } else if let Some(error) = &self.scheduling_error {
+            format!("Unavailable · {error}")
+        } else if current_enabled {
+            "Enabled · Daily Smart Scan".to_string()
+        } else if stale {
+            "Needs repair · schedule points to a previous app location".to_string()
+        } else if self.scheduling_status.is_some() {
+            "Disabled".to_string()
+        } else {
+            "Not loaded".to_string()
+        };
+        let action_label = if current_enabled {
+            "Disable Daily Smart Scan"
+        } else if stale {
+            "Repair Daily Smart Scan"
+        } else {
+            "Enable Daily Smart Scan"
+        };
+        let enable_after_click = !current_enabled;
+
+        content_shell("Settings")
+            .child(
+                card()
+                    .child(div().text_xl().child("Scheduled Smart Scan"))
+                    .child(
+                        div()
+                            .text_color(rgb(0xa9afb8))
+                            .child("Run the read-only user-cache Smart Scan once per day using the bundled CLI."),
+                    )
+                    .child(div().text_color(if stale {
+                        rgb(0xffc66d)
+                    } else if self.scheduling_error.is_some() {
+                        rgb(0xffa6a6)
+                    } else {
+                        rgb(0xa9afb8)
+                    }).child(status_text))
+                    .when(!self.scheduling_busy, |panel| {
+                        panel.child(
+                            button("schedule-toggle", action_label).on_click(cx.listener(
+                                move |this, _, window, cx| {
+                                    this.set_daily_schedule(enable_after_click, window, cx);
+                                },
+                            )),
+                        )
+                    })
+                    .when(self.scheduling_busy, |panel| {
+                        panel.child(div().text_color(rgb(0xa9afb8)).child("Updating…"))
+                    }),
+            )
+            .child(info_card(
+                "Scheduled scans are read-only. They cannot move files to Trash, uninstall applications, or permanently delete data.",
+            ))
     }
 }
 
