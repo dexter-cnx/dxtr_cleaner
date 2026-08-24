@@ -6,7 +6,7 @@ use cleaner_core::{
     ScanSummary, Scanner, SystemCacheScan, UninstallPlan, UninstallPlanItemKind, UserCacheScan,
     XcodeScan,
 };
-use cleaner_macos::SystemMacPlatform;
+use cleaner_macos::{MacPlatform, PermissionStatus, SystemMacPlatform};
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -16,11 +16,43 @@ fn main() -> ExitCode {
         Some("related") => run_related_files(&args),
         Some("orphans") => run_orphan_finder(),
         Some("uninstall-plan") => run_uninstall_plan(&args),
+        Some("permissions") => run_permissions(&args),
         _ => {
             print_usage();
             ExitCode::SUCCESS
         }
     }
+}
+
+fn run_permissions(args: &[String]) -> ExitCode {
+    let platform = SystemMacPlatform;
+    if args.iter().any(|arg| arg == "--open") {
+        return match platform.open_full_disk_access_settings() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("failed to open Full Disk Access settings: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+
+    let report = platform.full_disk_access_report();
+    let status = match report.status {
+        PermissionStatus::Unknown => "unknown",
+        PermissionStatus::Granted => "granted",
+        PermissionStatus::Denied => "denied",
+    };
+    println!("full-disk-access: {status}");
+    println!(
+        "probe: {}",
+        report
+            .probe_path
+            .as_deref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "-".into())
+    );
+    println!("detail: {}", report.detail);
+    ExitCode::SUCCESS
 }
 
 fn run_scan(args: &[String]) -> ExitCode {
@@ -330,6 +362,7 @@ fn print_usage() {
     println!("dxtr-cleaner related <bundle-id>");
     println!("dxtr-cleaner orphans");
     println!("dxtr-cleaner uninstall-plan <bundle-id>");
+    println!("dxtr-cleaner permissions [--open]");
 }
 
 #[cfg(test)]
