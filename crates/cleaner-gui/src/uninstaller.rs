@@ -1,9 +1,4 @@
-use std::{
-    env,
-    path::PathBuf,
-    sync::mpsc,
-    thread,
-};
+use std::{env, path::PathBuf, sync::mpsc, thread};
 
 use cleaner_core::{
     ApplicationInventory, CancellationToken, InstalledApplication, RelatedFileExecutionRoot,
@@ -70,7 +65,10 @@ pub fn spawn_plan(application: InstalledApplication) -> mpsc::Receiver<PlanMessa
 
         let platform = SystemMacPlatform;
         let related = platform.related_files(&application);
-        let _ = tx.send(PlanMessage::Ready(UninstallPlan::build(application, related)));
+        let _ = tx.send(PlanMessage::Ready(UninstallPlan::build(
+            application,
+            related,
+        )));
     });
     rx
 }
