@@ -357,8 +357,7 @@ mod tests {
         let outside = temp_root("fail-closed-outside");
         fs::create_dir_all(home.join("Library/Caches/com.example.orphan"))
             .expect("orphan fixture must be created");
-        fs::create_dir_all(home.join("Library"))
-            .expect("library fixture must be created");
+        fs::create_dir_all(home.join("Library")).expect("library fixture must be created");
         symlink(&outside, home.join("Library/Preferences"))
             .expect("symlinked Preferences root must be created");
 
@@ -366,7 +365,12 @@ mod tests {
 
         assert!(report.candidates.is_empty());
         assert!(!report.issues.is_empty());
-        assert!(report.issues.iter().any(|issue| issue.message.contains("symlink")));
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("symlink"))
+        );
 
         fs::remove_dir_all(home).expect("temp root must be removed");
         fs::remove_dir_all(outside).expect("outside root must be removed");
