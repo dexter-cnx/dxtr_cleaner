@@ -1,6 +1,6 @@
 CORE_PACKAGES := -p cleaner-core -p cleaner-macos -p cleaner-cli
 
-.PHONY: format format-check test clippy gui-check check verify prepush ci run cli-dry-run
+.PHONY: format format-check test clippy gui-check check verify prepush ci run cli-dry-run package-macos notarize-macos
 
 format:
 	cargo fmt --all
@@ -30,3 +30,9 @@ run:
 
 cli-dry-run:
 	cargo run -p cleaner-cli -- scan --category dev
+
+package-macos:
+	bash scripts/macos/package.sh
+
+notarize-macos:
+	bash scripts/macos/notarize.sh
