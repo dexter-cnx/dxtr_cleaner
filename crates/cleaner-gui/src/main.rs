@@ -762,51 +762,54 @@ impl CleanerApp {
             None => self.state.label().to_string(),
         };
 
-        let mut page = content_shell("Smart Care")
-            .child(
-                card()
-                    .child(div().text_xl().child("Reclaim your Mac"))
-                    .child(div().text_color(rgb(0xa9afb8)).child(status_text))
-                    .child(
-                        div()
-                            .flex()
-                            .gap_3()
-                            .child(
-                                button(
-                                    "scan",
-                                    if scan_active {
-                                        self.state.label()
-                                    } else {
-                                        "Start Smart Scan"
-                                    },
+        let mut page =
+            content_shell("Smart Care")
+                .child(
+                    card()
+                        .child(div().text_xl().child("Reclaim your Mac"))
+                        .child(div().text_color(rgb(0xa9afb8)).child(status_text))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_3()
+                                .child(
+                                    button(
+                                        "scan",
+                                        if scan_active {
+                                            self.state.label()
+                                        } else {
+                                            "Start Smart Scan"
+                                        },
+                                    )
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| {
+                                            if !matches!(
+                                                this.state,
+                                                ScanState::Scanning | ScanState::Cancelling
+                                            ) && !this.destructive_operation_active()
+                                            {
+                                                this.start_scan(window, cx);
+                                            }
+                                        },
+                                    )),
                                 )
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    if !matches!(
-                                        this.state,
-                                        ScanState::Scanning | ScanState::Cancelling
-                                    ) && !this.destructive_operation_active()
-                                    {
-                                        this.start_scan(window, cx);
-                                    }
-                                })),
-                            )
-                            .when(scan_active, |row| {
-                                row.child(secondary_button("cancel", "Cancel").on_click(
-                                    cx.listener(|this, _, _, cx| this.cancel_scan(cx)),
-                                ))
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .child(metric_card("User Cache", self.user_cache))
-                    .child(metric_card("System Cache", self.system_cache))
-                    .child(metric_card("Xcode", self.xcode))
-                    .child(metric_card("Homebrew", self.homebrew))
-                    .child(metric_card("Node", self.node)),
-            );
+                                .when(scan_active, |row| {
+                                    row.child(secondary_button("cancel", "Cancel").on_click(
+                                        cx.listener(|this, _, _, cx| this.cancel_scan(cx)),
+                                    ))
+                                }),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap_4()
+                        .child(metric_card("User Cache", self.user_cache))
+                        .child(metric_card("System Cache", self.system_cache))
+                        .child(metric_card("Xcode", self.xcode))
+                        .child(metric_card("Homebrew", self.homebrew))
+                        .child(metric_card("Node", self.node)),
+                );
 
         if let Some(plan) = &self.cleanup_plan {
             let rows = plan
@@ -984,22 +987,34 @@ impl CleanerApp {
                 .flex()
                 .gap_2()
                 .child(
-                    filter_chip("filter-all", "All", self.application_filter == ApplicationFilter::All)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.set_application_filter(ApplicationFilter::All, cx);
-                        })),
+                    filter_chip(
+                        "filter-all",
+                        "All",
+                        self.application_filter == ApplicationFilter::All,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.set_application_filter(ApplicationFilter::All, cx);
+                    })),
                 )
                 .child(
-                    filter_chip("filter-user", "User", self.application_filter == ApplicationFilter::User)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.set_application_filter(ApplicationFilter::User, cx);
-                        })),
+                    filter_chip(
+                        "filter-user",
+                        "User",
+                        self.application_filter == ApplicationFilter::User,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.set_application_filter(ApplicationFilter::User, cx);
+                    })),
                 )
                 .child(
-                    filter_chip("filter-local", "Local", self.application_filter == ApplicationFilter::Local)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.set_application_filter(ApplicationFilter::Local, cx);
-                        })),
+                    filter_chip(
+                        "filter-local",
+                        "Local",
+                        self.application_filter == ApplicationFilter::Local,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.set_application_filter(ApplicationFilter::Local, cx);
+                    })),
                 )
                 .child(
                     filter_chip(
@@ -1202,11 +1217,7 @@ fn secondary_button(id: &'static str, label: &'static str) -> gpui::Stateful<gpu
         .child(label)
 }
 
-fn filter_chip(
-    id: &'static str,
-    label: &'static str,
-    selected: bool,
-) -> gpui::Stateful<gpui::Div> {
+fn filter_chip(id: &'static str, label: &'static str, selected: bool) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .px_3()
