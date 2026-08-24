@@ -1,5 +1,4 @@
 use std::{
-    collections::BTreeSet,
     env,
     path::PathBuf,
     sync::mpsc,
@@ -102,8 +101,7 @@ pub fn spawn_uninstall(
         let current = inventory.applications.iter().find(|application| {
             application.path == reviewed.path
                 && application.location == reviewed.location
-                && application.metadata.bundle_identifier
-                    == reviewed.metadata.bundle_identifier
+                && application.metadata.bundle_identifier == reviewed.metadata.bundle_identifier
         });
         let Some(current) = current else {
             let _ = tx.send(UninstallMessage::Failed(
@@ -142,7 +140,7 @@ fn execution_roots(home: &std::path::Path) -> Vec<RelatedFileExecutionRoot> {
     use cleaner_core::RelatedFileKind;
 
     let library = home.join("Library");
-    let mut roots = vec![
+    vec![
         RelatedFileExecutionRoot::new(
             RelatedFileKind::ApplicationSupport,
             library.join("Application Support"),
@@ -155,10 +153,5 @@ fn execution_roots(home: &std::path::Path) -> Vec<RelatedFileExecutionRoot> {
             RelatedFileKind::SavedState,
             library.join("Saved Application State"),
         ),
-    ];
-
-    // Keep deterministic ordering and remove any accidental duplicate (kind, path) pairs.
-    let mut seen = BTreeSet::new();
-    roots.retain(|root| seen.insert((root.kind, root.path.clone())));
-    roots
+    ]
 }
