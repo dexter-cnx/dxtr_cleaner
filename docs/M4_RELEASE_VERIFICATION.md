@@ -58,17 +58,32 @@ Record the notarization submission ID in the release notes or attached verificat
 
 ## 4. Fresh-machine Gatekeeper smoke test
 
-Use the exact final ZIP intended for publication, preferably on a clean macOS user account or another Mac.
+Use the **published/downloaded** final ZIP, preferably on a clean macOS user account or another Mac. A local copy, USB copy, `scp`, or direct `ditto` extraction of a locally produced ZIP is not sufficient by itself because it may not carry the `com.apple.quarantine` attribute that triggers first-launch Gatekeeper behavior.
 
 Required evidence:
 
-1. download/copy the final ZIP
-2. extract it normally through Finder or `ditto`
-3. launch `Dxtr Cleaner.app`
-4. confirm Gatekeeper does not block the app as unidentified or damaged
-5. open Settings and confirm Daily Smart Scan status loads
-6. confirm Smart Scan itself is read-only until the user explicitly starts cleanup
-7. confirm cleanup remains Trash-only
+1. publish the exact final ZIP to the intended release location, then download that published asset through a normal browser/download path that applies quarantine metadata
+2. before extraction, verify the downloaded archive has a quarantine attribute:
+
+   ```bash
+   xattr -p com.apple.quarantine "Dxtr Cleaner.zip"
+   ```
+
+   The command must succeed and print a non-empty value. If the chosen download path does not apply quarantine, explicitly apply a test quarantine attribute before continuing and record that fact in the evidence notes rather than treating an unquarantined launch as sufficient evidence.
+3. extract the quarantined ZIP normally through Finder or another path that preserves the user-download trust context
+4. verify the extracted app still carries quarantine metadata before first launch:
+
+   ```bash
+   xattr -p com.apple.quarantine "Dxtr Cleaner.app"
+   ```
+
+5. launch `Dxtr Cleaner.app` for the first time
+6. confirm Gatekeeper does not block the app as unidentified or damaged
+7. open Settings and confirm Daily Smart Scan status loads
+8. confirm Smart Scan itself is read-only until the user explicitly starts cleanup
+9. confirm cleanup remains Trash-only
+
+A Gatekeeper smoke test without verified quarantine metadata does **not** satisfy the release gate.
 
 ## 5. LaunchAgent scheduling smoke test
 
@@ -137,6 +152,7 @@ Retain a small release evidence bundle containing:
 - notarization accepted result and submission ID
 - `stapler validate` output
 - `spctl --assess` output
+- quarantine evidence from the downloaded ZIP and extracted app before first launch
 - SHA-256 of the final ZIP
 - generated cask
 - Homebrew install/uninstall command output
@@ -151,7 +167,7 @@ M4 may be marked complete only when all of these are true:
 - GPUI scheduling controls are merged
 - Developer ID signed build verified
 - notarization accepted and stapled
-- Gatekeeper assessment passes
+- quarantined first-launch Gatekeeper smoke test passes
 - exact final ZIP published
 - Homebrew cask generated from that ZIP's real SHA-256
 - Homebrew install/uninstall smoke test passes
