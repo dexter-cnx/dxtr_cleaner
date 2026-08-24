@@ -21,6 +21,8 @@ script-check:
 	bash -n scripts/macos/package.sh
 	bash -n scripts/macos/notarize.sh
 	bash -n scripts/macos/generate_cask.sh
+	bash -n scripts/macos/test_generate_cask.sh
+	bash scripts/macos/test_generate_cask.sh
 
 verify: format-check test clippy gui-check script-check
 
