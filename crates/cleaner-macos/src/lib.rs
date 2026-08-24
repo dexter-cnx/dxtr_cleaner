@@ -1,4 +1,5 @@
 mod app_metadata;
+pub mod full_disk_access;
 mod orphan;
 mod related_files;
 
@@ -14,6 +15,7 @@ use cleaner_core::{
     OrphanReport, PermanentDeleteBackend, RelatedFileExecutionRoot, RelatedFileKind,
     RelatedFileMatcher, RelatedFileReport, TrashBackend,
 };
+use full_disk_access::probe_full_disk_access;
 use orphan::find_orphans_for_home;
 use related_files::related_files_for_home;
 
@@ -43,11 +45,15 @@ impl SystemMacPlatform {
         };
         Ok(related_file_execution_roots_for_home(&home))
     }
+
+    pub fn full_disk_access_report(&self) -> full_disk_access::FullDiskAccessReport {
+        probe_full_disk_access(std::env::var_os("HOME").map(PathBuf::from))
+    }
 }
 
 impl MacPlatform for SystemMacPlatform {
     fn full_disk_access_status(&self) -> PermissionStatus {
-        PermissionStatus::Unknown
+        self.full_disk_access_report().status
     }
 
     fn open_full_disk_access_settings(&self) -> Result<(), String> {
