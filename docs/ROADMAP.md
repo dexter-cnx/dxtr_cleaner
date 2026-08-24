@@ -69,12 +69,15 @@ The GPUI Uninstaller is a separate frontend flow from Smart Care. Installed apps
 
 Primary implementation path: continue shipping the macOS application with GPUI while keeping frontend dependencies outside the Rust engine boundary.
 
-- [ ] Full Disk Access coordinator
-- [ ] Finder reveal
-- [ ] System Settings deep links
-- [ ] scheduling / launch agent
-- [ ] signed + notarized packaging
+- [x] Full Disk Access coordinator
+- [x] Finder reveal platform adapter
+- [x] System Settings Full Disk Access deep link
+- [x] scheduling / LaunchAgent read-only foundation
+- [ ] GPUI scheduling controls / stable frontend surface
+- [ ] signed + notarized packaging — scripts and release gate in progress
 - [ ] Homebrew cask
+
+Full Disk Access probing is macOS-only and remains explicit `Granted` / `Denied` / `Unknown`. Finder reveal and the Full Disk Access System Settings deep link live behind `cleaner-macos`. LaunchAgent scheduling is deliberately read-only: it can schedule `dxtr-cleaner scan --category user`, but it cannot schedule Trash, uninstall, or permanent-delete mutation. Packaging includes both the GPUI executable and CLI in one `.app` bundle so the LaunchAgent can target a stable absolute in-bundle CLI path.
 
 ## Frontend architecture strategy
 
