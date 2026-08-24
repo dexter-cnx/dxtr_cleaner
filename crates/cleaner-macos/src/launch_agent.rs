@@ -190,7 +190,9 @@ mod tests {
 
         assert_eq!(
             config.plist_path(home),
-            Path::new("/Users/example/Library/LaunchAgents/com.cnxdev.dxtr-cleaner.smart-scan.plist")
+            Path::new(
+                "/Users/example/Library/LaunchAgents/com.cnxdev.dxtr-cleaner.smart-scan.plist"
+            )
         );
         assert_eq!(
             config.stdout_path,
