@@ -1,5 +1,6 @@
 mod app_metadata;
 pub mod full_disk_access;
+pub mod launch_agent;
 mod orphan;
 mod related_files;
 
