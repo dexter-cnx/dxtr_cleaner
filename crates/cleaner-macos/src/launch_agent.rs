@@ -1,11 +1,12 @@
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::Command,
 };
 
 pub const DEFAULT_LAUNCH_AGENT_LABEL: &str = "com.cnxdev.dxtr-cleaner.smart-scan";
 pub const MIN_START_INTERVAL_SECONDS: u64 = 15 * 60;
+pub const DAILY_START_INTERVAL_SECONDS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LaunchAgentConfig {
@@ -20,6 +21,82 @@ pub struct LaunchAgentConfig {
 pub struct LaunchAgentStatus {
     pub installed: bool,
     pub plist_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchAgentCoordinatorStatus {
+    pub installed: bool,
+    pub configured_for_current_executable: bool,
+    pub plist_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchAgentCoordinator {
+    home: PathBuf,
+    cleaner_executable: PathBuf,
+}
+
+impl LaunchAgentCoordinator {
+    pub fn for_current_process(home: PathBuf, current_executable: PathBuf) -> Result<Self, String> {
+        if !home.is_absolute() {
+            return Err("LaunchAgent HOME path must be absolute".into());
+        }
+        if !current_executable.is_absolute() {
+            return Err("current executable path must be absolute".into());
+        }
+        if is_app_translocation_path(&current_executable) {
+            return Err(
+                "scheduled scans require Dxtr Cleaner to run from a durable installed location; App Translocation paths are not supported"
+                    .into(),
+            );
+        }
+        let parent = current_executable
+            .parent()
+            .ok_or_else(|| "current executable path has no parent directory".to_string())?;
+        Ok(Self {
+            home,
+            cleaner_executable: parent.join("dxtr-cleaner"),
+        })
+    }
+
+    pub fn status(&self) -> Result<LaunchAgentCoordinatorStatus, String> {
+        let status = launch_agent_status(&self.home, DEFAULT_LAUNCH_AGENT_LABEL)?;
+        let configured_for_current_executable = if status.installed {
+            let plist = fs::read_to_string(&status.plist_path)
+                .map_err(|error| format!("failed to read LaunchAgent plist: {error}"))?;
+            let configured = configured_executable_from_plist(&plist)?;
+            configured == self.cleaner_executable
+        } else {
+            false
+        };
+        Ok(LaunchAgentCoordinatorStatus {
+            installed: status.installed,
+            configured_for_current_executable,
+            plist_path: status.plist_path,
+        })
+    }
+
+    pub fn enable_daily(&self) -> Result<PathBuf, String> {
+        let metadata = fs::symlink_metadata(&self.cleaner_executable)
+            .map_err(|error| format!("scheduled cleaner executable is unavailable: {error}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("scheduled cleaner executable must be a regular file".into());
+        }
+        let config = LaunchAgentConfig::smart_scan(
+            &self.home,
+            self.cleaner_executable.clone(),
+            DAILY_START_INTERVAL_SECONDS,
+        );
+        install_launch_agent(&self.home, &config)
+    }
+
+    pub fn disable(&self) -> Result<(), String> {
+        uninstall_launch_agent(&self.home, DEFAULT_LAUNCH_AGENT_LABEL)
+    }
+
+    pub fn cleaner_executable(&self) -> &Path {
+        &self.cleaner_executable
+    }
 }
 
 impl LaunchAgentConfig {
@@ -119,6 +196,34 @@ pub fn render_launch_agent_plist(config: &LaunchAgentConfig) -> Result<String, S
         stdout = xml_escape(&config.stdout_path.to_string_lossy()),
         stderr = xml_escape(&config.stderr_path.to_string_lossy()),
     ))
+}
+
+fn configured_executable_from_plist(plist: &str) -> Result<PathBuf, String> {
+    let arguments_key = "<key>ProgramArguments</key>";
+    let arguments = plist
+        .split_once(arguments_key)
+        .map(|(_, tail)| tail)
+        .ok_or_else(|| "LaunchAgent plist is missing ProgramArguments".to_string())?;
+    let array = arguments
+        .split_once("<array>")
+        .map(|(_, tail)| tail)
+        .ok_or_else(|| "LaunchAgent ProgramArguments is missing its array".to_string())?;
+    let string_start = array
+        .find("<string>")
+        .ok_or_else(|| "LaunchAgent ProgramArguments has no executable".to_string())?
+        + "<string>".len();
+    let rest = &array[string_start..];
+    let string_end = rest
+        .find("</string>")
+        .ok_or_else(|| "LaunchAgent executable string is malformed".to_string())?;
+    Ok(PathBuf::from(xml_unescape(&rest[..string_end])?))
+}
+
+fn is_app_translocation_path(path: &Path) -> bool {
+    path.components().any(|component| match component {
+        Component::Normal(value) => value == "AppTranslocation",
+        _ => false,
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -251,6 +356,32 @@ fn xml_escape(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
+fn xml_unescape(value: &str) -> Result<String, String> {
+    let mut output = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(index) = rest.find('&') {
+        output.push_str(&rest[..index]);
+        rest = &rest[index..];
+        let (decoded, consumed) = if rest.starts_with("&amp;") {
+            ('&', 5)
+        } else if rest.starts_with("&lt;") {
+            ('<', 4)
+        } else if rest.starts_with("&gt;") {
+            ('>', 4)
+        } else if rest.starts_with("&quot;") {
+            ('"', 6)
+        } else if rest.starts_with("&apos;") {
+            ('\'', 6)
+        } else {
+            return Err("LaunchAgent executable contains an unsupported XML entity".into());
+        };
+        output.push(decoded);
+        rest = &rest[consumed..];
+    }
+    output.push_str(rest);
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +398,83 @@ mod tests {
         ));
         fs::create_dir_all(&home).expect("temp home must be created");
         home
+    }
+
+    #[test]
+    fn coordinator_resolves_in_bundle_cli_sibling() {
+        let coordinator = LaunchAgentCoordinator::for_current_process(
+            PathBuf::from("/Users/example"),
+            PathBuf::from("/Applications/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner"),
+        )
+        .expect("absolute paths must be accepted");
+
+        assert_eq!(
+            coordinator.cleaner_executable(),
+            Path::new("/Applications/Dxtr Cleaner.app/Contents/MacOS/dxtr-cleaner")
+        );
+    }
+
+    #[test]
+    fn coordinator_rejects_relative_and_translocated_process_paths() {
+        assert!(
+            LaunchAgentCoordinator::for_current_process(
+                PathBuf::from("Users/example"),
+                PathBuf::from("/Applications/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner"),
+            )
+            .is_err()
+        );
+        assert!(
+            LaunchAgentCoordinator::for_current_process(
+                PathBuf::from("/Users/example"),
+                PathBuf::from("Dxtr Cleaner"),
+            )
+            .is_err()
+        );
+        assert!(
+            LaunchAgentCoordinator::for_current_process(
+                PathBuf::from("/Users/example"),
+                PathBuf::from(
+                    "/private/var/folders/x/AppTranslocation/ABC/d/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner",
+                ),
+            )
+            .unwrap_err()
+            .contains("durable")
+        );
+    }
+
+    #[test]
+    fn coordinator_status_detects_current_and_stale_executable_paths() {
+        let home = temp_home("coordinator-status");
+        let current_gui =
+            PathBuf::from("/Applications/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner");
+        let coordinator = LaunchAgentCoordinator::for_current_process(home.clone(), current_gui)
+            .expect("coordinator fixture must be valid");
+        let plist_path = launch_agent_plist_path(&home, DEFAULT_LAUNCH_AGENT_LABEL).unwrap();
+        fs::create_dir_all(plist_path.parent().unwrap()).expect("LaunchAgents must be created");
+
+        let current = LaunchAgentConfig::smart_scan(
+            &home,
+            coordinator.cleaner_executable().to_path_buf(),
+            DAILY_START_INTERVAL_SECONDS,
+        );
+        fs::write(&plist_path, render_launch_agent_plist(&current).unwrap())
+            .expect("current plist fixture must be written");
+        let status = coordinator.status().expect("current plist must parse");
+        assert!(status.installed);
+        assert!(status.configured_for_current_executable);
+
+        let stale = LaunchAgentConfig::smart_scan(
+            &home,
+            PathBuf::from("/Applications/Old Dxtr Cleaner.app/Contents/MacOS/dxtr-cleaner"),
+            DAILY_START_INTERVAL_SECONDS,
+        );
+        fs::write(&plist_path, render_launch_agent_plist(&stale).unwrap())
+            .expect("stale plist fixture must be written");
+        let status = coordinator.status().expect("stale plist must parse");
+        assert!(status.installed);
+        assert!(!status.configured_for_current_executable);
+
+        fs::remove_dir_all(home).expect("temp home must be removed");
     }
 
     #[test]
@@ -370,5 +578,19 @@ mod tests {
         assert!(!plist.contains("delete"));
         assert!(plist.contains("Dxtr &amp; Cleaner.app"));
         assert!(plist.contains("<integer>3600</integer>"));
+    }
+
+    #[test]
+    fn plist_executable_parser_round_trips_xml_entities() {
+        let home = Path::new("/Users/example");
+        let executable =
+            PathBuf::from("/Applications/Dxtr & Cleaner.app/Contents/MacOS/dxtr-cleaner");
+        let config = LaunchAgentConfig::smart_scan(home, executable.clone(), 3600);
+        let plist = render_launch_agent_plist(&config).unwrap();
+
+        assert_eq!(
+            configured_executable_from_plist(&plist).unwrap(),
+            executable
+        );
     }
 }
