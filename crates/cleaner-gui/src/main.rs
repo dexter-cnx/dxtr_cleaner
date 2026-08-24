@@ -10,10 +10,10 @@ use std::{
 };
 
 use cleaner_core::{
-    CancellationToken, CategoryScanTarget, CleanupCategory, CleanupPlan, ExecutionPolicy,
-    ExecutionReport, FileSystemScanner, HomebrewScan, InstalledApplication, NodeScan, Planner,
-    ScanEvent, ScanItem, ScanRequest, Scanner, SystemCacheScan, UninstallExecutionReport,
-    UninstallPlan, UserCacheScan, XcodeScan,
+    ApplicationLocation, CancellationToken, CategoryScanTarget, CleanupCategory, CleanupPlan,
+    ExecutionPolicy, ExecutionReport, FileSystemScanner, HomebrewScan, InstalledApplication,
+    NodeScan, Planner, ScanEvent, ScanItem, ScanRequest, Scanner, SystemCacheScan,
+    UninstallExecutionReport, UninstallPlan, UserCacheScan, XcodeScan,
 };
 use execution::{ExecutionMessage, policy_from_requests, spawn_trash_only_execution};
 use gpui::{
@@ -26,12 +26,30 @@ use uninstaller::{
 
 const MAX_EVENTS_PER_TICK: usize = 128;
 const MAX_REVIEW_ROWS: usize = 10;
-const MAX_APP_ROWS: usize = 14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ViewMode {
     SmartCare,
     Uninstaller,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ApplicationFilter {
+    All,
+    User,
+    Local,
+    System,
+}
+
+impl ApplicationFilter {
+    fn matches(self, application: &InstalledApplication) -> bool {
+        match self {
+            Self::All => true,
+            Self::User => application.location == ApplicationLocation::User,
+            Self::Local => application.location == ApplicationLocation::Local,
+            Self::System => application.location == ApplicationLocation::System,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -140,6 +158,7 @@ struct CleanerApp {
     uninstall_state: UninstallState,
     uninstall_error: Option<String>,
     applications: Vec<InstalledApplication>,
+    application_filter: ApplicationFilter,
     uninstall_plan: Option<UninstallPlan>,
     uninstall_report: Option<UninstallExecutionReport>,
     uninstall_cancellation: Option<CancellationToken>,
@@ -169,6 +188,7 @@ impl CleanerApp {
             uninstall_state: UninstallState::Idle,
             uninstall_error: None,
             applications: Vec::new(),
+            application_filter: ApplicationFilter::All,
             uninstall_plan: None,
             uninstall_report: None,
             uninstall_cancellation: None,
@@ -507,6 +527,13 @@ impl CleanerApp {
         cx.notify();
     }
 
+    fn set_application_filter(&mut self, filter: ApplicationFilter, cx: &mut Context<Self>) {
+        if self.uninstall_plan.is_none() {
+            self.application_filter = filter;
+            cx.notify();
+        }
+    }
+
     fn prepare_uninstall(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
         if matches!(
             self.uninstall_state,
@@ -735,54 +762,51 @@ impl CleanerApp {
             None => self.state.label().to_string(),
         };
 
-        let mut page =
-            content_shell("Smart Care")
-                .child(
-                    card()
-                        .child(div().text_xl().child("Reclaim your Mac"))
-                        .child(div().text_color(rgb(0xa9afb8)).child(status_text))
-                        .child(
-                            div()
-                                .flex()
-                                .gap_3()
-                                .child(
-                                    button(
-                                        "scan",
-                                        if scan_active {
-                                            self.state.label()
-                                        } else {
-                                            "Start Smart Scan"
-                                        },
-                                    )
-                                    .on_click(cx.listener(
-                                        |this, _, window, cx| {
-                                            if !matches!(
-                                                this.state,
-                                                ScanState::Scanning | ScanState::Cancelling
-                                            ) && !this.destructive_operation_active()
-                                            {
-                                                this.start_scan(window, cx);
-                                            }
-                                        },
-                                    )),
+        let mut page = content_shell("Smart Care")
+            .child(
+                card()
+                    .child(div().text_xl().child("Reclaim your Mac"))
+                    .child(div().text_color(rgb(0xa9afb8)).child(status_text))
+                    .child(
+                        div()
+                            .flex()
+                            .gap_3()
+                            .child(
+                                button(
+                                    "scan",
+                                    if scan_active {
+                                        self.state.label()
+                                    } else {
+                                        "Start Smart Scan"
+                                    },
                                 )
-                                .when(scan_active, |row| {
-                                    row.child(secondary_button("cancel", "Cancel").on_click(
-                                        cx.listener(|this, _, _, cx| this.cancel_scan(cx)),
-                                    ))
-                                }),
-                        ),
-                )
-                .child(
-                    div()
-                        .flex()
-                        .gap_4()
-                        .child(metric_card("User Cache", self.user_cache))
-                        .child(metric_card("System Cache", self.system_cache))
-                        .child(metric_card("Xcode", self.xcode))
-                        .child(metric_card("Homebrew", self.homebrew))
-                        .child(metric_card("Node", self.node)),
-                );
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    if !matches!(
+                                        this.state,
+                                        ScanState::Scanning | ScanState::Cancelling
+                                    ) && !this.destructive_operation_active()
+                                    {
+                                        this.start_scan(window, cx);
+                                    }
+                                })),
+                            )
+                            .when(scan_active, |row| {
+                                row.child(secondary_button("cancel", "Cancel").on_click(
+                                    cx.listener(|this, _, _, cx| this.cancel_scan(cx)),
+                                ))
+                            }),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .gap_4()
+                    .child(metric_card("User Cache", self.user_cache))
+                    .child(metric_card("System Cache", self.system_cache))
+                    .child(metric_card("Xcode", self.xcode))
+                    .child(metric_card("Homebrew", self.homebrew))
+                    .child(metric_card("Node", self.node)),
+            );
 
         if let Some(plan) = &self.cleanup_plan {
             let rows = plan
@@ -922,11 +946,15 @@ impl CleanerApp {
         }
 
         if self.uninstall_plan.is_none() && !self.applications.is_empty() {
-            let rows = self
+            let filtered = self
                 .applications
                 .iter()
-                .take(MAX_APP_ROWS)
                 .enumerate()
+                .filter(|(_, app)| self.application_filter.matches(app))
+                .collect::<Vec<_>>();
+            let filtered_count = filtered.len();
+            let rows = filtered
+                .into_iter()
                 .map(|(index, app)| {
                     let bundle = app
                         .metadata
@@ -951,18 +979,53 @@ impl CleanerApp {
                         }))
                 })
                 .collect::<Vec<_>>();
-            let hidden = self.applications.len().saturating_sub(MAX_APP_ROWS);
+
+            let filters = div()
+                .flex()
+                .gap_2()
+                .child(
+                    filter_chip("filter-all", "All", self.application_filter == ApplicationFilter::All)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.set_application_filter(ApplicationFilter::All, cx);
+                        })),
+                )
+                .child(
+                    filter_chip("filter-user", "User", self.application_filter == ApplicationFilter::User)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.set_application_filter(ApplicationFilter::User, cx);
+                        })),
+                )
+                .child(
+                    filter_chip("filter-local", "Local", self.application_filter == ApplicationFilter::Local)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.set_application_filter(ApplicationFilter::Local, cx);
+                        })),
+                )
+                .child(
+                    filter_chip(
+                        "filter-system",
+                        "System",
+                        self.application_filter == ApplicationFilter::System,
+                    )
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.set_application_filter(ApplicationFilter::System, cx);
+                    })),
+                );
+
             page = page.child(
                 card()
                     .child(div().text_lg().child(format!(
-                        "{} installed application(s)",
+                        "{filtered_count} shown · {} installed application(s)",
                         self.applications.len()
                     )))
+                    .child(filters)
                     .children(rows)
-                    .when(hidden > 0, |panel| {
-                        panel.child(div().text_color(rgb(0xa9afb8)).child(format!(
-                            "+ {hidden} more application(s); filtering/search comes in the next UI refinement"
-                        )))
+                    .when(filtered_count == 0, |panel| {
+                        panel.child(
+                            div()
+                                .text_color(rgb(0xa9afb8))
+                                .child("No applications match this location filter."),
+                        )
                     }),
             );
         }
@@ -1135,6 +1198,25 @@ fn secondary_button(id: &'static str, label: &'static str) -> gpui::Stateful<gpu
         .py_2()
         .rounded_lg()
         .bg(rgb(0x2b303a))
+        .cursor_pointer()
+        .child(label)
+}
+
+fn filter_chip(
+    id: &'static str,
+    label: &'static str,
+    selected: bool,
+) -> gpui::Stateful<gpui::Div> {
+    div()
+        .id(id)
+        .px_3()
+        .py_2()
+        .rounded_lg()
+        .bg(if selected {
+            rgb(0x4f7cff)
+        } else {
+            rgb(0x2b303a)
+        })
         .cursor_pointer()
         .child(label)
 }
