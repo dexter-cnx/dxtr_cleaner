@@ -20,6 +20,15 @@ if [[ "${URL}" != "${RELEASE_URL_PREFIX}"* ]]; then
   exit 1
 fi
 
+URL_PATH="${URL#${RELEASE_URL_PREFIX}}"
+DECODED_URL_PATH="$(printf '%s' "${URL_PATH}" | sed -E 's/%2[eE]/./g')"
+case "/${DECODED_URL_PATH}/" in
+  */../*|*/./*)
+    echo "URL must not contain dot-segment traversal" >&2
+    exit 1
+    ;;
+esac
+
 ruby_single_quote() {
   local value="$1"
   value=${value//\\/\\\\}
