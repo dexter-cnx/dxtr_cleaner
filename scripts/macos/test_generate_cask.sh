@@ -31,4 +31,17 @@ if VERSION="0.1.0" \
   exit 1
 fi
 
+for traversal_url in \
+  "https://github.com/dexter-cnx/dxtr_cleaner/releases/download/../../../../other/project/releases/download/v1/file.zip" \
+  "https://github.com/dexter-cnx/dxtr_cleaner/releases/download/%2e%2e/%2E%2E/other/file.zip"; do
+  if VERSION="0.1.0" \
+    SHA256="${UPPER_SHA}" \
+    URL="${traversal_url}" \
+    OUTPUT="${TMP_DIR}/traversal.rb" \
+    bash "${GENERATOR}" >/dev/null 2>&1; then
+    echo "generator accepted a release URL with dot-segment traversal" >&2
+    exit 1
+  fi
+done
+
 printf 'generate_cask regression tests passed\n'
