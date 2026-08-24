@@ -15,7 +15,9 @@ The GPUI Uninstaller is a frontend for the shared Rust uninstall planning and Tr
 
 ## Execution flow
 
-Each execution attempt refreshes application inventory and related-file evidence before mutation. The worker then creates a fresh `UninstallExecutionPolicy`, pins the current related-file execution roots, and runs `UninstallExecutor` through the macOS Trash backend.
+Each execution attempt refreshes application inventory and related-file evidence before mutation. The worker then creates a fresh `UninstallExecutionPolicy`, requests the allow-listed related-file execution roots from `cleaner-macos`, pins those current roots, and runs `UninstallExecutor` through the macOS Trash backend. The GPUI frontend does not construct or hard-code macOS Library mutation roots.
+
+`SystemMacPlatform::related_file_execution_roots()` owns the macOS root set and fails closed when `HOME` is unavailable. This keeps platform-specific filesystem policy outside the GPUI layer and gives future frontends the same adapter-owned safety surface.
 
 Smart Care cleanup and application uninstall share a destructive-operation guard. Only one Trash mutation flow may execute or cancel at a time, avoiding races between cleanup of a related path and uninstall of its containing application data.
 

@@ -1,9 +1,8 @@
-use std::{env, path::PathBuf, sync::mpsc, thread};
+use std::{env, sync::mpsc, thread};
 
 use cleaner_core::{
-    ApplicationInventory, CancellationToken, InstalledApplication, RelatedFileExecutionRoot,
-    RelatedFileMatcher, UninstallExecutionPolicy, UninstallExecutionReport, UninstallExecutor,
-    UninstallPlan,
+    ApplicationInventory, CancellationToken, InstalledApplication, RelatedFileMatcher,
+    UninstallExecutionPolicy, UninstallExecutionReport, UninstallExecutor, UninstallPlan,
 };
 use cleaner_macos::SystemMacPlatform;
 
@@ -79,13 +78,6 @@ pub fn spawn_uninstall(
 ) -> mpsc::Receiver<UninstallMessage> {
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let Some(home) = env::var_os("HOME").map(PathBuf::from) else {
-            let _ = tx.send(UninstallMessage::Failed(
-                "HOME is not set; uninstall execution is blocked".into(),
-            ));
-            return;
-        };
-
         let platform = SystemMacPlatform;
         let inventory = platform.inventory();
         if !inventory.issues.is_empty() {
@@ -109,7 +101,15 @@ pub fn spawn_uninstall(
         };
 
         let fresh_related = platform.related_files(current);
-        let roots = execution_roots(&home);
+        let roots = match platform.related_file_execution_roots() {
+            Ok(roots) => roots,
+            Err(error) => {
+                let _ = tx.send(UninstallMessage::Failed(format!(
+                    "uninstall execution roots are unavailable: {error}"
+                )));
+                return;
+            }
+        };
         let policy = match UninstallExecutionPolicy::pin(&plan, &fresh_related, &roots) {
             Ok(policy) => policy,
             Err(error) => {
@@ -132,24 +132,4 @@ pub fn spawn_uninstall(
         }
     });
     rx
-}
-
-fn execution_roots(home: &std::path::Path) -> Vec<RelatedFileExecutionRoot> {
-    use cleaner_core::RelatedFileKind;
-
-    let library = home.join("Library");
-    vec![
-        RelatedFileExecutionRoot::new(
-            RelatedFileKind::ApplicationSupport,
-            library.join("Application Support"),
-        ),
-        RelatedFileExecutionRoot::new(RelatedFileKind::Cache, library.join("Caches")),
-        RelatedFileExecutionRoot::new(RelatedFileKind::Container, library.join("Containers")),
-        RelatedFileExecutionRoot::new(RelatedFileKind::HttpStorage, library.join("HTTPStorages")),
-        RelatedFileExecutionRoot::new(RelatedFileKind::Preference, library.join("Preferences")),
-        RelatedFileExecutionRoot::new(
-            RelatedFileKind::SavedState,
-            library.join("Saved Application State"),
-        ),
-    ]
 }
