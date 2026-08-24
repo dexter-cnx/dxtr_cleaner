@@ -445,7 +445,8 @@ mod tests {
     #[test]
     fn coordinator_status_detects_current_and_stale_executable_paths() {
         let home = temp_home("coordinator-status");
-        let current_gui = PathBuf::from("/Applications/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner");
+        let current_gui =
+            PathBuf::from("/Applications/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner");
         let coordinator = LaunchAgentCoordinator::for_current_process(home.clone(), current_gui)
             .expect("coordinator fixture must be valid");
         let plist_path = launch_agent_plist_path(&home, DEFAULT_LAUNCH_AGENT_LABEL).unwrap();
@@ -582,12 +583,14 @@ mod tests {
     #[test]
     fn plist_executable_parser_round_trips_xml_entities() {
         let home = Path::new("/Users/example");
-        let executable = PathBuf::from(
-            "/Applications/Dxtr & Cleaner.app/Contents/MacOS/dxtr-cleaner",
-        );
+        let executable =
+            PathBuf::from("/Applications/Dxtr & Cleaner.app/Contents/MacOS/dxtr-cleaner");
         let config = LaunchAgentConfig::smart_scan(home, executable.clone(), 3600);
         let plist = render_launch_agent_plist(&config).unwrap();
 
-        assert_eq!(configured_executable_from_plist(&plist).unwrap(), executable);
+        assert_eq!(
+            configured_executable_from_plist(&plist).unwrap(),
+            executable
+        );
     }
 }
