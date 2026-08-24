@@ -146,7 +146,9 @@ fn rollback_plist(plist_path: &Path, previous_plist: Option<&[u8]>) -> Result<()
 fn format_bootstrap_error(message: String, rollback: Result<(), String>) -> String {
     match rollback {
         Ok(()) => message,
-        Err(rollback_error) => format!("{message}; additionally failed to roll back plist: {rollback_error}"),
+        Err(rollback_error) => {
+            format!("{message}; additionally failed to roll back plist: {rollback_error}")
+        }
     }
 }
 
