@@ -95,14 +95,12 @@ fn probe_directory(path: &Path) -> ProbeResult {
 mod tests {
     use super::*;
 
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn unsupported_platform_is_unknown() {
-        #[cfg(not(target_os = "macos"))]
-        {
-            let report = probe_full_disk_access(Some(PathBuf::from("/tmp/Library/Mail")));
-            assert_eq!(report.status, PermissionStatus::Unknown);
-            assert!(report.probe_path.is_none());
-        }
+        let report = probe_full_disk_access(Some(PathBuf::from("/tmp/Library/Mail")));
+        assert_eq!(report.status, PermissionStatus::Unknown);
+        assert!(report.probe_path.is_none());
     }
 
     #[cfg(target_os = "macos")]
