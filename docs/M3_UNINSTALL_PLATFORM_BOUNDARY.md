@@ -11,3 +11,5 @@ This slice keeps the reviewed uninstall/execution model frontend-neutral while m
 If HOME is unavailable, the macOS adapter refuses to provide execution roots and uninstall remains blocked before mutation.
 
 The supported related-file roots are Application Support, Caches, Containers, HTTPStorages, Preferences, and Saved Application State. Group Containers remain excluded from ownership inference and uninstall execution.
+
+The adapter only supplies the platform root set; `cleaner-core` still pins canonical roots and revalidates them immediately before Trash, so moving root construction out of GPUI does not weaken execution-time safety checks.
