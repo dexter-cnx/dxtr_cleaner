@@ -716,57 +716,59 @@ impl CleanerApp {
             Some(error) => format!("{} · {error}", self.state.label()),
             None if self.permission_denied > 0 => format!(
                 "{} · {} permission-denied path(s)",
-                self.state.label(), self.permission_denied
+                self.state.label(),
+                self.permission_denied
             ),
             None => self.state.label().to_string(),
         };
 
-        let mut page = content_shell("Smart Care")
-            .child(
-                card()
-                    .child(div().text_xl().child("Reclaim your Mac"))
-                    .child(div().text_color(rgb(0xa9afb8)).child(status_text))
-                    .child(
-                        div()
-                            .flex()
-                            .gap_3()
-                            .child(
-                                button(
-                                    "scan",
-                                    if scan_active {
-                                        self.state.label()
-                                    } else {
-                                        "Start Smart Scan"
-                                    },
-                                )
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    if !matches!(
-                                        this.state,
-                                        ScanState::Scanning | ScanState::Cancelling
-                                    ) {
-                                        this.start_scan(window, cx);
-                                    }
-                                })),
-                            )
-                            .when(scan_active, |row| {
-                                row.child(
-                                    secondary_button("cancel", "Cancel").on_click(cx.listener(
-                                        |this, _, _, cx| this.cancel_scan(cx),
+        let mut page =
+            content_shell("Smart Care")
+                .child(
+                    card()
+                        .child(div().text_xl().child("Reclaim your Mac"))
+                        .child(div().text_color(rgb(0xa9afb8)).child(status_text))
+                        .child(
+                            div()
+                                .flex()
+                                .gap_3()
+                                .child(
+                                    button(
+                                        "scan",
+                                        if scan_active {
+                                            self.state.label()
+                                        } else {
+                                            "Start Smart Scan"
+                                        },
+                                    )
+                                    .on_click(cx.listener(
+                                        |this, _, window, cx| {
+                                            if !matches!(
+                                                this.state,
+                                                ScanState::Scanning | ScanState::Cancelling
+                                            ) {
+                                                this.start_scan(window, cx);
+                                            }
+                                        },
                                     )),
                                 )
-                            }),
-                    ),
-            )
-            .child(
-                div()
-                    .flex()
-                    .gap_4()
-                    .child(metric_card("User Cache", self.user_cache))
-                    .child(metric_card("System Cache", self.system_cache))
-                    .child(metric_card("Xcode", self.xcode))
-                    .child(metric_card("Homebrew", self.homebrew))
-                    .child(metric_card("Node", self.node)),
-            );
+                                .when(scan_active, |row| {
+                                    row.child(secondary_button("cancel", "Cancel").on_click(
+                                        cx.listener(|this, _, _, cx| this.cancel_scan(cx)),
+                                    ))
+                                }),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap_4()
+                        .child(metric_card("User Cache", self.user_cache))
+                        .child(metric_card("System Cache", self.system_cache))
+                        .child(metric_card("Xcode", self.xcode))
+                        .child(metric_card("Homebrew", self.homebrew))
+                        .child(metric_card("Node", self.node)),
+                );
 
         if let Some(plan) = &self.cleanup_plan {
             let rows = plan
@@ -807,13 +809,11 @@ impl CleanerApp {
                                             this.set_all_review_items(true, cx);
                                         })),
                                 )
-                                .child(
-                                    secondary_button("deselect-all", "Deselect all").on_click(
-                                        cx.listener(|this, _, _, cx| {
-                                            this.set_all_review_items(false, cx);
-                                        }),
-                                    ),
-                                ),
+                                .child(secondary_button("deselect-all", "Deselect all").on_click(
+                                    cx.listener(|this, _, _, cx| {
+                                        this.set_all_review_items(false, cx);
+                                    }),
+                                )),
                         )
                     })
                     .children(rows)
@@ -825,13 +825,11 @@ impl CleanerApp {
                         )
                     })
                     .when(selected > 0 && !execution_active, |panel| {
-                        panel.child(
-                            button("execute-trash", "Move selected to Trash").on_click(
-                                cx.listener(|this, _, window, cx| {
-                                    this.start_cleanup(window, cx);
-                                }),
-                            ),
-                        )
+                        panel.child(button("execute-trash", "Move selected to Trash").on_click(
+                            cx.listener(|this, _, window, cx| {
+                                this.start_cleanup(window, cx);
+                            }),
+                        ))
                     })
                     .when(execution_active, |panel| {
                         panel.child(
@@ -888,9 +886,7 @@ impl CleanerApp {
         );
 
         if let Some(error) = &self.uninstall_error {
-            page = page.child(
-                card().child(div().text_color(rgb(0xffa6a6)).child(error.clone())),
-            );
+            page = page.child(card().child(div().text_color(rgb(0xffa6a6)).child(error.clone())));
         }
 
         if self.uninstall_plan.is_none() && !self.applications.is_empty() {
@@ -962,7 +958,11 @@ impl CleanerApp {
                     let row = review_row(
                         item.path().display().to_string(),
                         format!("{:?} · {}", item.confidence(), label),
-                        if item.is_selectable() { "Toggle" } else { "Locked" },
+                        if item.is_selectable() {
+                            "Toggle"
+                        } else {
+                            "Locked"
+                        },
                     )
                     .id(format!("uninstall-item-{}", item.path().display()));
                     if item.is_selectable() {
@@ -1057,28 +1057,22 @@ impl CleanerApp {
 }
 
 fn content_shell(title: &'static str) -> gpui::Div {
-    div()
-        .flex()
-        .flex_col()
-        .flex_1()
-        .p_8()
-        .gap_6()
-        .child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .child(div().text_2xl().child(title))
-                .child(
-                    div()
-                        .px_3()
-                        .py_1()
-                        .rounded_full()
-                        .bg(rgb(0x173624))
-                        .text_color(rgb(0x83e6a2))
-                        .child("Safe mode · Trash only"),
-                ),
-        )
+    div().flex().flex_col().flex_1().p_8().gap_6().child(
+        div()
+            .flex()
+            .items_center()
+            .justify_between()
+            .child(div().text_2xl().child(title))
+            .child(
+                div()
+                    .px_3()
+                    .py_1()
+                    .rounded_full()
+                    .bg(rgb(0x173624))
+                    .text_color(rgb(0x83e6a2))
+                    .child("Safe mode · Trash only"),
+            ),
+    )
 }
 
 fn card() -> gpui::Div {
