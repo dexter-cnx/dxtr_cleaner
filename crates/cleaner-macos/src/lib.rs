@@ -167,9 +167,6 @@ impl OrphanFinder for SystemMacPlatform {
 
         let mut report = find_orphans_for_home(&inventory.applications, &PathBuf::from(home));
 
-        // A top-level application may contain active nested bundles such as .appex or .xpc
-        // whose identifiers are not part of the current application inventory. Until nested
-        // bundle inventory is implemented, orphan ownership is therefore review-only.
         for candidate in &mut report.candidates {
             candidate.confidence = MatchConfidence::Medium;
         }
@@ -373,24 +370,24 @@ mod tests {
 
         assert_eq!(roots.len(), 6);
         assert_eq!(
-            roots[0].path(),
+            roots[0].path,
             Path::new("/Users/example/Library/Application Support")
         );
-        assert_eq!(roots[1].path(), Path::new("/Users/example/Library/Caches"));
+        assert_eq!(roots[1].path, Path::new("/Users/example/Library/Caches"));
         assert_eq!(
-            roots[2].path(),
+            roots[2].path,
             Path::new("/Users/example/Library/Containers")
         );
         assert_eq!(
-            roots[3].path(),
+            roots[3].path,
             Path::new("/Users/example/Library/HTTPStorages")
         );
         assert_eq!(
-            roots[4].path(),
+            roots[4].path,
             Path::new("/Users/example/Library/Preferences")
         );
         assert_eq!(
-            roots[5].path(),
+            roots[5].path,
             Path::new("/Users/example/Library/Saved Application State")
         );
     }
