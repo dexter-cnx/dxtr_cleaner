@@ -16,6 +16,12 @@ pub struct LaunchAgentConfig {
     pub stderr_path: PathBuf,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchAgentStatus {
+    pub installed: bool,
+    pub plist_path: PathBuf,
+}
+
 impl LaunchAgentConfig {
     pub fn smart_scan(home: &Path, executable: PathBuf, start_interval_seconds: u64) -> Self {
         let log_dir = home.join("Library/Logs/DxtrCleaner");
@@ -29,9 +35,7 @@ impl LaunchAgentConfig {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.label.is_empty() {
-            return Err("LaunchAgent label must not be empty".into());
-        }
+        validate_label(&self.label)?;
         if !self.executable.is_absolute() {
             return Err("scheduled cleaner executable path must be absolute".into());
         }
@@ -46,10 +50,40 @@ impl LaunchAgentConfig {
         Ok(())
     }
 
-    pub fn plist_path(&self, home: &Path) -> PathBuf {
-        home.join("Library/LaunchAgents")
-            .join(format!("{}.plist", self.label))
+    pub fn plist_path(&self, home: &Path) -> Result<PathBuf, String> {
+        launch_agent_plist_path(home, &self.label)
     }
+}
+
+pub fn launch_agent_plist_path(home: &Path, label: &str) -> Result<PathBuf, String> {
+    validate_label(label)?;
+    if !home.is_absolute() {
+        return Err("LaunchAgent HOME path must be absolute".into());
+    }
+    Ok(home
+        .join("Library/LaunchAgents")
+        .join(format!("{label}.plist")))
+}
+
+pub fn launch_agent_status(home: &Path, label: &str) -> Result<LaunchAgentStatus, String> {
+    let plist_path = launch_agent_plist_path(home, label)?;
+    let installed = match fs::symlink_metadata(&plist_path) {
+        Ok(metadata) => {
+            if metadata.file_type().is_symlink() {
+                return Err("LaunchAgent plist must not be a symlink".into());
+            }
+            if !metadata.is_file() {
+                return Err("LaunchAgent plist path is not a regular file".into());
+            }
+            true
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.to_string()),
+    };
+    Ok(LaunchAgentStatus {
+        installed,
+        plist_path,
+    })
 }
 
 pub fn render_launch_agent_plist(config: &LaunchAgentConfig) -> Result<String, String> {
@@ -91,7 +125,7 @@ pub fn render_launch_agent_plist(config: &LaunchAgentConfig) -> Result<String, S
 pub fn install_launch_agent(home: &Path, config: &LaunchAgentConfig) -> Result<PathBuf, String> {
     config.validate()?;
     let plist = render_launch_agent_plist(config)?;
-    let plist_path = config.plist_path(home);
+    let plist_path = config.plist_path(home)?;
     let launch_agents = plist_path
         .parent()
         .ok_or_else(|| "LaunchAgent path has no parent directory".to_string())?;
@@ -160,15 +194,14 @@ pub fn install_launch_agent(home: &Path, config: &LaunchAgentConfig) -> Result<P
 
 #[cfg(target_os = "macos")]
 pub fn uninstall_launch_agent(home: &Path, label: &str) -> Result<(), String> {
-    if label.is_empty() {
-        return Err("LaunchAgent label must not be empty".into());
-    }
-    let plist_path = home
-        .join("Library/LaunchAgents")
-        .join(format!("{label}.plist"));
+    let plist_path = launch_agent_plist_path(home, label)?;
     let domain = gui_domain(home)?;
 
     if plist_path.exists() {
+        let metadata = fs::symlink_metadata(&plist_path).map_err(|error| error.to_string())?;
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("LaunchAgent plist path is not a regular file".into());
+        }
         let status = Command::new("launchctl")
             .args(["bootout", &domain])
             .arg(&plist_path)
@@ -186,6 +219,19 @@ pub fn uninstall_launch_agent(home: &Path, label: &str) -> Result<(), String> {
 pub fn uninstall_launch_agent(home: &Path, label: &str) -> Result<(), String> {
     let _ = (home, label);
     Err("LaunchAgent scheduling is available only on macOS".into())
+}
+
+fn validate_label(label: &str) -> Result<(), String> {
+    if label.is_empty() {
+        return Err("LaunchAgent label must not be empty".into());
+    }
+    if !label
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    {
+        return Err("LaunchAgent label contains unsupported characters".into());
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -208,6 +254,20 @@ fn xml_escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_home(test_name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock must be after epoch")
+            .as_nanos();
+        let home = std::env::temp_dir().join(format!(
+            "dxtr-cleaner-launch-agent-{test_name}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&home).expect("temp home must be created");
+        home
+    }
 
     #[test]
     fn smart_scan_uses_user_launch_agent_and_log_locations() {
@@ -219,7 +279,7 @@ mod tests {
         );
 
         assert_eq!(
-            config.plist_path(home),
+            config.plist_path(home).unwrap(),
             Path::new(
                 "/Users/example/Library/LaunchAgents/com.cnxdev.dxtr-cleaner.smart-scan.plist"
             )
@@ -245,6 +305,52 @@ mod tests {
             MIN_START_INTERVAL_SECONDS - 1,
         );
         assert!(frequent.validate().unwrap_err().contains("at least"));
+    }
+
+    #[test]
+    fn rejects_unsafe_label_components() {
+        let home = Path::new("/Users/example");
+        assert!(launch_agent_plist_path(home, "../escape").is_err());
+        assert!(launch_agent_plist_path(home, "label/child").is_err());
+    }
+
+    #[test]
+    fn status_reports_missing_and_regular_plist() {
+        let home = temp_home("status");
+        let missing = launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
+            .expect("missing plist should be a valid disabled status");
+        assert!(!missing.installed);
+
+        let plist_path = missing.plist_path.clone();
+        fs::create_dir_all(plist_path.parent().unwrap()).expect("LaunchAgents must be created");
+        fs::write(&plist_path, b"plist").expect("plist fixture must be written");
+
+        let installed = launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
+            .expect("regular plist should report installed");
+        assert!(installed.installed);
+        assert_eq!(installed.plist_path, plist_path);
+
+        fs::remove_dir_all(home).expect("temp home must be removed");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn status_rejects_symlinked_plist() {
+        use std::os::unix::fs::symlink;
+
+        let home = temp_home("status-symlink");
+        let plist_path = launch_agent_plist_path(&home, DEFAULT_LAUNCH_AGENT_LABEL).unwrap();
+        fs::create_dir_all(plist_path.parent().unwrap()).expect("LaunchAgents must be created");
+        let target = home.join("outside.plist");
+        fs::write(&target, b"plist").expect("target fixture must be written");
+        symlink(&target, &plist_path).expect("plist symlink must be created");
+
+        assert!(
+            launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
+                .unwrap_err()
+                .contains("symlink")
+        );
+        fs::remove_dir_all(home).expect("temp home must be removed");
     }
 
     #[test]
