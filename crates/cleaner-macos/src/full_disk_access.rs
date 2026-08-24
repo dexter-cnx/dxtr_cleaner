@@ -1,4 +1,8 @@
-use std::{fs, io::ErrorKind, path::{Path, PathBuf}};
+use std::{
+    fs,
+    io::ErrorKind,
+    path::{Path, PathBuf},
+};
 
 use crate::PermissionStatus;
 
