@@ -73,11 +73,11 @@ Primary implementation path: continue shipping the macOS application with GPUI w
 - [x] Finder reveal platform adapter
 - [x] System Settings Full Disk Access deep link
 - [x] scheduling / LaunchAgent read-only foundation
-- [ ] GPUI scheduling controls / stable frontend surface
+- [x] GPUI scheduling controls / stable frontend surface
 - [ ] signed + notarized packaging — scripts and release gate implemented; real Developer ID/notarization verification still required
 - [ ] Homebrew cask — generator implemented; publish only after a real notarized release artifact exists
 
-Full Disk Access probing is macOS-only and remains explicit `Granted` / `Denied` / `Unknown`. Finder reveal and the Full Disk Access System Settings deep link live behind `cleaner-macos`. LaunchAgent scheduling is deliberately read-only: it can schedule `dxtr-cleaner scan --category user`, but it cannot schedule Trash, uninstall, or permanent-delete mutation. Packaging includes both the GPUI executable and CLI in one `.app` bundle so the LaunchAgent can target a stable absolute in-bundle CLI path.
+Full Disk Access probing is macOS-only and remains explicit `Granted` / `Denied` / `Unknown`. Finder reveal and the Full Disk Access System Settings deep link live behind `cleaner-macos`. LaunchAgent scheduling is deliberately read-only: it can schedule `dxtr-cleaner scan --category user`, but it cannot schedule Trash, uninstall, or permanent-delete mutation. The stable `LaunchAgentCoordinator` owns label/path/interval/launchctl behavior and validates the in-bundle CLI target. GPUI Settings consumes only coordinator status and enable/disable operations on a background worker, including stale-configuration detection when the app bundle moves. Packaging includes both the GPUI executable and CLI in one `.app` bundle so the LaunchAgent can target a stable absolute in-bundle CLI path.
 
 The Homebrew cask is generated from the exact final release ZIP using an explicit version, SHA-256 digest, and HTTPS URL. The generator does not manufacture placeholder hashes or point Homebrew at an unnotarized artifact. M4 packaging and cask tasks remain open until a real Developer ID build passes notarization/Gatekeeper verification and the resulting published ZIP passes Homebrew install/uninstall smoke tests.
 
