@@ -1,3 +1,4 @@
+mod local_app_data_scan;
 mod paths;
 mod temp_scan;
 
@@ -5,6 +6,7 @@ use std::path::Path;
 
 use cleaner_core::{PermanentDeleteBackend, TrashBackend};
 
+pub use local_app_data_scan::WindowsLocalAppDataCacheScan;
 pub use paths::WindowsPaths;
 pub use temp_scan::WindowsTempScan;
 
