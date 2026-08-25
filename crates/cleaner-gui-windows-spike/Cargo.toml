@@ -1,0 +1,15 @@
+[package]
+name = "cleaner-gui-windows-spike"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "dxtr-cleaner-windows-spike"
+path = "src/main.rs"
+
+[dependencies]
+cleaner-core.workspace = true
+gpui.workspace = true
+gpui_platform.workspace = true
