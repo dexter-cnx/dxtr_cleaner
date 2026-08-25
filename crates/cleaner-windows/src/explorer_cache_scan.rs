@@ -115,7 +115,9 @@ mod tests {
         assert!(request.excluded_roots.contains(&text));
         assert!(request.excluded_roots.contains(&unrelated_dir));
 
-        let mut items = FileSystemScanner.scan(&request).expect("scan explorer cache");
+        let mut items = FileSystemScanner
+            .scan(&request)
+            .expect("scan explorer cache");
         items.sort_by(|left, right| left.path.cmp(&right.path));
         assert_eq!(
             items.into_iter().map(|item| item.path).collect::<Vec<_>>(),
