@@ -34,10 +34,17 @@ impl ExecutionReport {
             .count()
     }
 
+    pub fn skipped_count(&self) -> usize {
+        self.records
+            .iter()
+            .filter(|record| is_raced_away_record(record))
+            .count()
+    }
+
     pub fn failed_count(&self) -> usize {
         self.records
             .iter()
-            .filter(|record| record.result.is_err())
+            .filter(|record| record.result.is_err() && !is_raced_away_record(record))
             .count()
     }
 
@@ -57,6 +64,18 @@ impl ExecutionReport {
             })
             .map(|record| record.bytes)
             .sum()
+    }
+}
+
+fn is_raced_away_record(record: &ExecutionRecord) -> bool {
+    match &record.result {
+        Err(ExecutionFailure::Safety(SafetyError::MissingPath)) => true,
+        Err(ExecutionFailure::Backend(message)) => {
+            let normalized = message.to_ascii_lowercase();
+            normalized.contains("path no longer exists")
+                || normalized.contains("path disappeared before finder")
+        }
+        _ => false,
     }
 }
 
@@ -176,6 +195,20 @@ mod tests {
         }
     }
 
+    struct FinderRaceBackend;
+
+    impl TrashBackend for FinderRaceBackend {
+        fn move_to_trash(&self, _path: &Path) -> Result<(), String> {
+            Err("move to Trash failed: path disappeared before Finder could move it".into())
+        }
+    }
+
+    impl PermanentDeleteBackend for FinderRaceBackend {
+        fn permanent_delete(&self, _path: &Path) -> Result<(), String> {
+            unreachable!("fixture uses Trash-only action policy")
+        }
+    }
+
     fn plan_for(paths: &[PathBuf]) -> CleanupPlan {
         CleanupPlan {
             items: paths
@@ -239,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn revalidation_failure_preserves_prior_success_records() {
+    fn revalidation_missing_path_is_reported_as_skipped_not_failed() {
         let root = std::env::temp_dir().join(format!(
             "dxtr-cleaner-partial-report-{}",
             std::process::id()
@@ -263,13 +296,39 @@ mod tests {
         .expect("execution report");
 
         assert_eq!(report.succeeded_count(), 1);
-        assert_eq!(report.failed_count(), 1);
+        assert_eq!(report.skipped_count(), 1);
+        assert_eq!(report.failed_count(), 0);
         assert_eq!(report.moved_bytes(), 1);
         assert_eq!(report.permanently_deleted_bytes(), 0);
         assert!(matches!(
             report.records[1].result,
             Err(ExecutionFailure::Safety(SafetyError::MissingPath))
         ));
+
+        fs::remove_dir_all(root).expect("remove root");
+    }
+
+    #[test]
+    fn finder_race_backend_message_is_reported_as_skipped_not_failed() {
+        let root =
+            std::env::temp_dir().join(format!("dxtr-cleaner-finder-race-{}", std::process::id()));
+        fs::create_dir_all(&root).expect("create root");
+        let path = root.join("cache");
+        fs::write(&path, b"cache").expect("write file");
+
+        let report = CleanupExecutor::execute(
+            &plan_for(&[path]),
+            &execution_policy(root.clone()),
+            &CategoryActionPolicy::trash_only(),
+            &CancellationToken::new(),
+            &FinderRaceBackend,
+        )
+        .expect("execution report");
+
+        assert_eq!(report.succeeded_count(), 0);
+        assert_eq!(report.skipped_count(), 1);
+        assert_eq!(report.failed_count(), 0);
+        assert_eq!(report.moved_bytes(), 0);
 
         fs::remove_dir_all(root).expect("remove root");
     }
@@ -296,6 +355,7 @@ mod tests {
                 .expect("execution report");
 
         assert_eq!(report.succeeded_count(), 1);
+        assert_eq!(report.skipped_count(), 0);
         assert_eq!(report.moved_bytes(), 0);
         assert_eq!(report.permanently_deleted_bytes(), 1);
         assert!(
