@@ -727,6 +727,7 @@ impl CleanerApp {
                             entity.update(cx, |this, cx| {
                                 let incomplete =
                                     report.safety_failure.is_some() || report.failed_count() > 0;
+                                let failure_detail = uninstall_failure_detail(&report);
                                 this.uninstall_state = if report.cancelled {
                                     UninstallState::Idle
                                 } else if incomplete {
@@ -734,6 +735,7 @@ impl CleanerApp {
                                 } else {
                                     UninstallState::Completed
                                 };
+                                this.uninstall_error = failure_detail;
                                 this.uninstall_report = Some(report);
                                 this.uninstall_cancellation = None;
                                 this.uninstall_plan = None;
@@ -1431,6 +1433,31 @@ fn review_row(primary: String, secondary: String, marker: &'static str) -> gpui:
         .child(div().flex_1().child(primary))
         .child(div().text_color(rgb(0xa9afb8)).child(secondary))
         .child(div().text_color(rgb(0x83e6a2)).child(marker))
+}
+
+fn uninstall_failure_detail(report: &UninstallExecutionReport) -> Option<String> {
+    let failures = report
+        .records
+        .iter()
+        .filter_map(|record| {
+            record
+                .result
+                .as_ref()
+                .err()
+                .map(|error| format!("{}: {error}", record.path.display()))
+        })
+        .take(5)
+        .collect::<Vec<_>>();
+    if failures.is_empty() {
+        return None;
+    }
+
+    let hidden = report.failed_count().saturating_sub(failures.len());
+    let mut detail = format!("Backend failure(s): {}", failures.join("; "));
+    if hidden > 0 {
+        detail.push_str(&format!("; + {hidden} more failure(s)"));
+    }
+    Some(detail)
 }
 
 fn format_bytes(bytes: u64) -> String {
