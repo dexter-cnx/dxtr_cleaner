@@ -15,6 +15,11 @@ impl WindowsDevCacheScan {
             paths.local_app_data.join("npm-cache"),
             paths.local_app_data.join("pnpm").join("store"),
             paths.local_app_data.join("Yarn").join("Cache"),
+            paths
+                .local_app_data
+                .join("Yarn")
+                .join("Berry")
+                .join("cache"),
         ];
         Self { roots }
     }
@@ -54,6 +59,7 @@ mod tests {
                 local.join("npm-cache"),
                 local.join("pnpm").join("store"),
                 local.join("Yarn").join("Cache"),
+                local.join("Yarn").join("Berry").join("cache"),
             ]
         );
         assert!(request.excluded_roots.is_empty());
