@@ -217,11 +217,7 @@ mod tests {
     fn broad_system_root_is_rejected_for_execution() {
         let plan = CleanupPlan {
             items: vec![CleanupPlanItem {
-                item: item(
-                    protected_system_root(),
-                    CleanupCategory::SystemCache,
-                    false,
-                ),
+                item: item(protected_system_root(), CleanupCategory::SystemCache, false),
                 selected: true,
             }],
         };
