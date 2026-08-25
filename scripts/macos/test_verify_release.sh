@@ -9,8 +9,10 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 MOCK_BIN="${TMP_DIR}/bin"
 ZIP_PATH="${TMP_DIR}/Dxtr Cleaner.zip"
 EVIDENCE_DIR="${TMP_DIR}/evidence"
+EXPECTED_SHA_FILE="${TMP_DIR}/expected-sha256.txt"
 mkdir -p "${MOCK_BIN}"
 printf 'verified-zip-bytes' >"${ZIP_PATH}"
+printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' >"${EXPECTED_SHA_FILE}"
 
 make_mock() {
   local name="$1"
@@ -27,7 +29,7 @@ make_mock codesign 'printf "codesign ok\\n" >&2; exit 0'
 make_mock xcrun 'printf "stapler ok\\n"; exit 0'
 make_mock spctl 'printf "accepted\\n"; exit 0'
 make_mock xattr 'if [[ "${EMPTY_QUARANTINE:-0}" == "1" ]]; then exit 0; fi; printf "0081;mock;Safari;\\n"; exit 0'
-make_mock shasum 'printf "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  %s\\n" "$3"'
+make_mock shasum 'if [[ "${MISMATCH_SHA:-0}" == "1" ]]; then printf "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb  %s\\n" "$3"; else printf "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  %s\\n" "$3"; fi'
 make_mock ditto '
 if [[ "$1" != "-x" || "$2" != "-k" ]]; then
   echo "unexpected ditto args" >&2
@@ -48,9 +50,11 @@ chmod +x "$4/Dxtr Cleaner.app/Contents/MacOS/Dxtr Cleaner" "$4/Dxtr Cleaner.app/
 PATH="${MOCK_BIN}:/usr/bin:/bin" \
 ZIP_PATH="${ZIP_PATH}" \
 EVIDENCE_DIR="${EVIDENCE_DIR}" \
+EXPECTED_SHA256_FILE="${EXPECTED_SHA_FILE}" \
 bash "${VERIFY_SCRIPT}"
 
 grep -Fq 'sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "${EVIDENCE_DIR}/summary.txt"
+grep -Fq 'expected_sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "${EVIDENCE_DIR}/summary.txt"
 grep -Fq 'verified_app=Dxtr Cleaner.app (extracted from ZIP)' "${EVIDENCE_DIR}/summary.txt"
 test -s "${EVIDENCE_DIR}/codesign-verify.txt"
 test -s "${EVIDENCE_DIR}/codesign-details.txt"
@@ -59,20 +63,32 @@ test -s "${EVIDENCE_DIR}/gatekeeper.txt"
 test -s "${EVIDENCE_DIR}/quarantine-zip.txt"
 test -s "${EVIDENCE_DIR}/quarantine-app.txt"
 
-# A different ZIP that extracts without the scheduled CLI must fail even if prior evidence succeeded.
-printf 'bad-zip' >"${ZIP_PATH}"
-if PATH="${MOCK_BIN}:/usr/bin:/bin" ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${EVIDENCE_DIR}" bash "${VERIFY_SCRIPT}" >/dev/null 2>&1; then
-  echo "verifier accepted a ZIP without the scheduled CLI" >&2
+# A different valid signed/notarized ZIP must fail if its digest differs from the prepared artifact.
+if PATH="${MOCK_BIN}:/usr/bin:/bin" MISMATCH_SHA=1 ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${EVIDENCE_DIR}" EXPECTED_SHA256_FILE="${EXPECTED_SHA_FILE}" bash "${VERIFY_SCRIPT}" >/dev/null 2>&1; then
+  echo "verifier accepted a ZIP whose digest differs from the prepared release" >&2
   exit 1
 fi
 if [[ -e "${EVIDENCE_DIR}/summary.txt" ]]; then
-  echo "failed rerun retained stale successful evidence" >&2
+  echo "digest mismatch retained stale successful evidence" >&2
+  exit 1
+fi
+
+# Final quarantine-required verification must not run without the prepared digest.
+if PATH="${MOCK_BIN}:/usr/bin:/bin" ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${EVIDENCE_DIR}" bash "${VERIFY_SCRIPT}" >/dev/null 2>&1; then
+  echo "verifier accepted final release without prepared digest" >&2
+  exit 1
+fi
+
+# A ZIP that extracts without the scheduled CLI must fail.
+printf 'bad-zip' >"${ZIP_PATH}"
+if PATH="${MOCK_BIN}:/usr/bin:/bin" ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${EVIDENCE_DIR}" EXPECTED_SHA256_FILE="${EXPECTED_SHA_FILE}" bash "${VERIFY_SCRIPT}" >/dev/null 2>&1; then
+  echo "verifier accepted a ZIP without the scheduled CLI" >&2
   exit 1
 fi
 
 # Empty quarantine values must not satisfy the release gate.
 printf 'verified-zip-bytes' >"${ZIP_PATH}"
-if PATH="${MOCK_BIN}:/usr/bin:/bin" EMPTY_QUARANTINE=1 ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${EVIDENCE_DIR}" bash "${VERIFY_SCRIPT}" >/dev/null 2>&1; then
+if PATH="${MOCK_BIN}:/usr/bin:/bin" EMPTY_QUARANTINE=1 ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${EVIDENCE_DIR}" EXPECTED_SHA256_FILE="${EXPECTED_SHA_FILE}" bash "${VERIFY_SCRIPT}" >/dev/null 2>&1; then
   echo "verifier accepted an empty quarantine attribute" >&2
   exit 1
 fi
