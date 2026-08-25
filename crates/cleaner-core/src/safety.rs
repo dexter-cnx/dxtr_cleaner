@@ -21,6 +21,7 @@ const WINDOWS_PROTECTED_TOP_LEVEL: &[&str] = &[
     "windows",
     "program files",
     "program files (x86)",
+    "program files (arm)",
     "programdata",
     "users",
 ];
@@ -133,6 +134,9 @@ mod tests {
         assert!(is_protected_broad_root(Path::new(r"D:\Program Files")));
         assert!(is_protected_broad_root(Path::new(
             r"C:\Program Files (x86)"
+        )));
+        assert!(is_protected_broad_root(Path::new(
+            r"C:\Program Files (Arm)"
         )));
         assert!(is_protected_broad_root(Path::new(r"C:\ProgramData")));
         assert!(is_protected_broad_root(Path::new(r"C:\Users")));
