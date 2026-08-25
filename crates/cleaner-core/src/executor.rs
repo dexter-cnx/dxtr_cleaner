@@ -310,10 +310,8 @@ mod tests {
 
     #[test]
     fn finder_race_backend_message_is_reported_as_skipped_not_failed() {
-        let root = std::env::temp_dir().join(format!(
-            "dxtr-cleaner-finder-race-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("dxtr-cleaner-finder-race-{}", std::process::id()));
         fs::create_dir_all(&root).expect("create root");
         let path = root.join("cache");
         fs::write(&path, b"cache").expect("write file");
