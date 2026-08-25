@@ -174,6 +174,26 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    fn protected_system_root() -> PathBuf {
+        PathBuf::from(r"C:\Windows")
+    }
+
+    #[cfg(windows)]
+    fn protected_system_descendant() -> PathBuf {
+        PathBuf::from(r"C:\Windows\Temp")
+    }
+
+    #[cfg(not(windows))]
+    fn protected_system_root() -> PathBuf {
+        PathBuf::from("/Library")
+    }
+
+    #[cfg(not(windows))]
+    fn protected_system_descendant() -> PathBuf {
+        PathBuf::from("/Library/Caches")
+    }
+
     #[test]
     fn destructive_execution_is_off_by_default() {
         let plan = CleanupPlan::default();
@@ -198,7 +218,7 @@ mod tests {
         let plan = CleanupPlan {
             items: vec![CleanupPlanItem {
                 item: item(
-                    PathBuf::from("/Library"),
+                    protected_system_root(),
                     CleanupCategory::SystemCache,
                     false,
                 ),
@@ -211,7 +231,7 @@ mod tests {
                 &plan,
                 &ExecutionPolicy::enabled(vec![AllowedRoot::new(
                     CleanupCategory::SystemCache,
-                    "/Library/Caches",
+                    protected_system_descendant(),
                 )]),
             ),
             Err(SafetyError::ProtectedRoot)
