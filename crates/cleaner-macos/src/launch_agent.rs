@@ -331,7 +331,9 @@ fn format_bootstrap_error(message: String, rollback: Result<(), String>) -> Stri
     match rollback {
         Ok(()) => message,
         Err(rollback_error) => {
-            format!("{message}; additionally failed to roll back LaunchAgent state: {rollback_error}")
+            format!(
+                "{message}; additionally failed to roll back LaunchAgent state: {rollback_error}"
+            )
         }
     }
 }
@@ -597,16 +599,20 @@ mod tests {
         let target = home.join("outside.plist");
         fs::write(&target, b"plist").expect("target fixture must be written");
         symlink(&target, &plist_path).expect("plist symlink must be created");
-        assert!(launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
-            .unwrap_err()
-            .contains("symlink"));
+        assert!(
+            launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
+                .unwrap_err()
+                .contains("symlink")
+        );
 
         fs::remove_file(&plist_path).expect("plist symlink must be removed");
         fs::remove_file(&target).expect("target must be removed");
         symlink(&target, &plist_path).expect("dangling plist symlink must be created");
-        assert!(launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
-            .unwrap_err()
-            .contains("symlink"));
+        assert!(
+            launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
+                .unwrap_err()
+                .contains("symlink")
+        );
 
         fs::remove_dir_all(home).expect("temp home must be removed");
     }
@@ -616,9 +622,11 @@ mod tests {
         let home = temp_home("existing-regular-file");
         let directory = home.join("not-a-file");
         fs::create_dir_all(&directory).expect("directory fixture must be created");
-        assert!(existing_regular_file(&directory)
-            .unwrap_err()
-            .contains("not a regular file"));
+        assert!(
+            existing_regular_file(&directory)
+                .unwrap_err()
+                .contains("not a regular file")
+        );
         assert_eq!(existing_regular_file(&home.join("missing")).unwrap(), None);
         fs::remove_dir_all(home).expect("temp home must be removed");
     }
