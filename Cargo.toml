@@ -4,6 +4,7 @@ members = [
   "crates/cleaner-macos",
   "crates/cleaner-cli",
   "crates/cleaner-gui",
+  "crates/cleaner-gui-windows-spike",
 ]
 resolver = "2"
 
