@@ -131,11 +131,15 @@ mod tests {
         assert!(is_protected_broad_root(Path::new(r"C:\")));
         assert!(is_protected_broad_root(Path::new(r"C:\Windows")));
         assert!(is_protected_broad_root(Path::new(r"D:\Program Files")));
-        assert!(is_protected_broad_root(Path::new(r"C:\Program Files (x86)")));
+        assert!(is_protected_broad_root(Path::new(
+            r"C:\Program Files (x86)"
+        )));
         assert!(is_protected_broad_root(Path::new(r"C:\ProgramData")));
         assert!(is_protected_broad_root(Path::new(r"C:\Users")));
         assert!(!is_protected_broad_root(Path::new(r"C:\Windows\Temp")));
-        assert!(!is_protected_broad_root(Path::new(r"C:\Users\tester\AppData\Local\Temp")));
+        assert!(!is_protected_broad_root(Path::new(
+            r"C:\Users\tester\AppData\Local\Temp"
+        )));
     }
 
     #[cfg(windows)]
@@ -143,7 +147,9 @@ mod tests {
     fn protects_windows_case_variants_and_parent_normalization() {
         assert!(is_protected_broad_root(Path::new(r"c:\WINDOWS")));
         assert!(is_protected_broad_root(Path::new(r"C:\Temp\..\Windows")));
-        assert!(!is_protected_broad_root(Path::new(r"C:\Windows\Temp\..\Temp")));
+        assert!(!is_protected_broad_root(Path::new(
+            r"C:\Windows\Temp\..\Temp"
+        )));
     }
 
     #[cfg(windows)]
