@@ -115,16 +115,18 @@ Design rules:
 
 ## M5 — Windows support
 
-Target Windows only after the core scan/cleanup model and primary macOS flow are stable. The first Windows experiment may reuse GPUI, but the Rust engine must not depend on that choice.
+Target Windows only after the core scan/cleanup model and primary macOS flow are stable. M5 feasibility work may proceed in parallel with the remaining physical M4 release verification, but it must not be used to mark M4 release gates complete. The first Windows experiment may reuse GPUI, but the Rust engine must not depend on that choice.
 
 ### M5.0 — GPUI Windows feasibility spike
 
-- [ ] create `spike/windows-gpui`
-- [ ] build and launch the GPUI shell on Windows 11
+- [x] create `spike/windows-gpui`
+- [ ] build and launch the GPUI shell on Windows 11 — isolated spike crate and Windows CI compile probe added; interactive launch still required
 - [ ] validate sidebar/layout rendering and basic interaction
-- [ ] scan a user-selected directory and stream results into the GUI
+- [ ] scan a user-selected directory and stream results into the GUI — read-only path + event-stream harness implemented; real Windows smoke still required
 - [ ] delete a disposable test file through the platform adapter
 - [ ] record GPUI/API gaps and decide whether GPUI Windows can become a supported production target
+
+See [`M5_WINDOWS_GPUI_SPIKE.md`](./M5_WINDOWS_GPUI_SPIKE.md) for the isolated feasibility harness and evidence rules.
 
 ### M5.1 — Windows platform adapters
 
