@@ -15,3 +15,11 @@ jobs:
           components: rustfmt, clippy
       - name: Verify
         run: make ci
+
+  windows-gpui-spike:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check Windows GPUI spike
+        run: cargo check -p cleaner-gui-windows-spike
