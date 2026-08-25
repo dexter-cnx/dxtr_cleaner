@@ -1,4 +1,4 @@
-CORE_PACKAGES := -p cleaner-core -p cleaner-macos -p cleaner-cli
+CORE_PACKAGES := -p cleaner-core -p cleaner-macos -p cleaner-windows -p cleaner-cli
 
 .PHONY: format format-check test clippy gui-check script-check check verify prepush ci run cli-dry-run package-macos notarize-macos generate-cask verify-macos-release prepare-macos-release
 

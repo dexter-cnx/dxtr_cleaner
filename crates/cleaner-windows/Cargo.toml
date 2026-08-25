@@ -1,0 +1,12 @@
+[package]
+name = "cleaner-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cleaner-core.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+trash = "5.2.6"
