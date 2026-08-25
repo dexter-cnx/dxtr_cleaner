@@ -1,10 +1,12 @@
 mod paths;
+mod temp_scan;
 
 use std::path::Path;
 
 use cleaner_core::{PermanentDeleteBackend, TrashBackend};
 
 pub use paths::WindowsPaths;
+pub use temp_scan::WindowsTempScan;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WindowsTrashBackend;
