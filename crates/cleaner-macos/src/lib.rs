@@ -349,7 +349,10 @@ fn move_path_to_trash(path: &Path) -> Result<(), String> {
     }
 
     if stderr.is_empty() {
-        Err(format!("move to Trash failed with status {}", output.status))
+        Err(format!(
+            "move to Trash failed with status {}",
+            output.status
+        ))
     } else {
         Err(format!(
             "move to Trash failed with status {}: {stderr}",
