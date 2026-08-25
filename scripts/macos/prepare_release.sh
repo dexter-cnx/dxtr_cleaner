@@ -6,6 +6,7 @@ DIST_DIR="${DIST_DIR:-${ROOT_DIR}/dist}"
 APP_NAME="${APP_NAME:-Dxtr Cleaner}"
 ZIP_PATH="${DIST_DIR}/${APP_NAME}.zip"
 PREP_EVIDENCE_DIR="${PREP_EVIDENCE_DIR:-${DIST_DIR}/prepublish-evidence}"
+EXPECTED_SHA256_FILE="${EXPECTED_SHA256_FILE:-${PREP_EVIDENCE_DIR}/expected-sha256.txt}"
 PACKAGE_SCRIPT="${PACKAGE_SCRIPT:-${ROOT_DIR}/scripts/macos/package.sh}"
 NOTARIZE_SCRIPT="${NOTARIZE_SCRIPT:-${ROOT_DIR}/scripts/macos/notarize.sh}"
 VERIFY_SCRIPT="${VERIFY_SCRIPT:-${ROOT_DIR}/scripts/macos/verify_release.sh}"
@@ -41,8 +42,6 @@ DIST_DIR="${DIST_DIR}" APP_NAME="${APP_NAME}" NOTARY_PROFILE="${NOTARY_PROFILE}"
   bash "${NOTARIZE_SCRIPT}"
 
 # Pre-publication diagnostic verification deliberately skips quarantine only here.
-# The published/downloaded ZIP must still pass verify_release.sh with its default
-# QUARANTINE_REQUIRED=1 before the M4 release gate can be closed.
 ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${PREP_EVIDENCE_DIR}" QUARANTINE_REQUIRED=0 \
   bash "${VERIFY_SCRIPT}"
 
@@ -52,11 +51,15 @@ if [[ ! "${SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
   exit 1
 fi
 
+mkdir -p "$(dirname "${EXPECTED_SHA256_FILE}")"
+printf '%s\n' "${SHA256}" >"${EXPECTED_SHA256_FILE}"
+
 VERSION="${VERSION}" SHA256="${SHA256}" URL="${URL}" \
   bash "${CASK_SCRIPT}"
 
 printf 'macOS release preparation passed\n'
 printf 'zip: %s\n' "${ZIP_PATH}"
 printf 'sha256: %s\n' "${SHA256}"
+printf 'expected sha file: %s\n' "${EXPECTED_SHA256_FILE}"
 printf 'prepublish evidence: %s\n' "${PREP_EVIDENCE_DIR}"
-printf 'next: publish/download the exact ZIP, then run make verify-macos-release on the quarantined download\n'
+printf 'next: publish/download the exact ZIP, then run ZIP_PATH=<downloaded-zip> EXPECTED_SHA256_FILE=%s make verify-macos-release\n' "${EXPECTED_SHA256_FILE}"
