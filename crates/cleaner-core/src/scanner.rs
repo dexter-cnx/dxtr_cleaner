@@ -274,6 +274,16 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    fn protected_scan_root() -> PathBuf {
+        PathBuf::from(r"C:\Windows")
+    }
+
+    #[cfg(not(windows))]
+    fn protected_scan_root() -> PathBuf {
+        PathBuf::from("/System")
+    }
+
     #[test]
     fn scans_regular_files_and_emits_events() {
         let root = temp_root("events");
@@ -351,7 +361,7 @@ mod tests {
     fn rejects_protected_broad_scan_root() {
         let scanner = FileSystemScanner;
         let error = scanner
-            .scan(&request(PathBuf::from("/System")))
+            .scan(&request(protected_scan_root()))
             .expect_err("protected broad root must be rejected");
 
         assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
