@@ -12,7 +12,10 @@ pub struct WindowsPaths {
 impl WindowsPaths {
     #[cfg(windows)]
     pub fn discover() -> Result<Self, String> {
-        Self::from_lookup(|key| std::env::var_os(key).map(PathBuf::from))
+        Self::from_lookup_and_temp(
+            |key| std::env::var_os(key).map(PathBuf::from),
+            std::env::temp_dir(),
+        )
     }
 
     #[cfg(not(windows))]
@@ -21,13 +24,16 @@ impl WindowsPaths {
     }
 
     #[cfg(windows)]
-    fn from_lookup(mut lookup: impl FnMut(&str) -> Option<PathBuf>) -> Result<Self, String> {
+    fn from_lookup_and_temp(
+        mut lookup: impl FnMut(&str) -> Option<PathBuf>,
+        temp: PathBuf,
+    ) -> Result<Self, String> {
         Ok(Self {
             user_profile: required_absolute(&mut lookup, "USERPROFILE")?,
             local_app_data: required_absolute(&mut lookup, "LOCALAPPDATA")?,
             program_data: required_absolute(&mut lookup, "PROGRAMDATA")?,
             system_root: required_absolute(&mut lookup, "SystemRoot")?,
-            temp: required_absolute(&mut lookup, "TEMP")?,
+            temp: validate_absolute(temp, "Windows temporary directory")?,
         })
     }
 }
@@ -39,14 +45,16 @@ fn required_absolute(
 ) -> Result<PathBuf, String> {
     let path =
         lookup(key).ok_or_else(|| format!("missing required Windows path variable: {key}"))?;
+    validate_absolute(path, &format!("Windows path variable {key}"))
+}
+
+#[cfg(windows)]
+fn validate_absolute(path: PathBuf, label: &str) -> Result<PathBuf, String> {
     if path.as_os_str().is_empty() {
-        return Err(format!("empty required Windows path variable: {key}"));
+        return Err(format!("empty {label}"));
     }
     if !path.is_absolute() {
-        return Err(format!(
-            "required Windows path variable must be absolute: {key}={}",
-            path.display()
-        ));
+        return Err(format!("{label} must be absolute: {}", path.display()));
     }
     Ok(path)
 }
@@ -75,24 +83,29 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn rejects_missing_or_relative_required_paths() {
-        let missing = WindowsPaths::from_lookup(|key| match key {
-            "USERPROFILE" => Some(PathBuf::from(r"C:\\Users\\tester")),
-            _ => None,
-        })
+        let missing = WindowsPaths::from_lookup_and_temp(
+            |key| match key {
+                "USERPROFILE" => Some(PathBuf::from(r"C:\\Users\\tester")),
+                _ => None,
+            },
+            PathBuf::from(r"C:\\Temp"),
+        )
         .expect_err("missing required paths must fail");
         assert!(missing.contains("LOCALAPPDATA"));
 
-        let relative = WindowsPaths::from_lookup(|key| {
-            Some(match key {
-                "TEMP" => PathBuf::from(r"relative\\temp"),
-                "USERPROFILE" => PathBuf::from(r"C:\\Users\\tester"),
-                "LOCALAPPDATA" => PathBuf::from(r"C:\\Users\\tester\\AppData\\Local"),
-                "PROGRAMDATA" => PathBuf::from(r"C:\\ProgramData"),
-                "SystemRoot" => PathBuf::from(r"C:\\Windows"),
-                _ => unreachable!("unexpected key"),
-            })
-        })
-        .expect_err("relative required path must fail");
-        assert!(relative.contains("TEMP"));
+        let relative = WindowsPaths::from_lookup_and_temp(
+            |key| {
+                Some(match key {
+                    "USERPROFILE" => PathBuf::from(r"C:\\Users\\tester"),
+                    "LOCALAPPDATA" => PathBuf::from(r"C:\\Users\\tester\\AppData\\Local"),
+                    "PROGRAMDATA" => PathBuf::from(r"C:\\ProgramData"),
+                    "SystemRoot" => PathBuf::from(r"C:\\Windows"),
+                    _ => unreachable!("unexpected key"),
+                })
+            },
+            PathBuf::from(r"relative\\temp"),
+        )
+        .expect_err("relative temp path must fail");
+        assert!(relative.contains("temporary directory"));
     }
 }
