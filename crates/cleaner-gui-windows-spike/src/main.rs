@@ -15,6 +15,8 @@ use gpui::{
 };
 use gpui_platform::application;
 
+const MAX_EVENTS_PER_TICK: usize = 128;
+
 enum ScanMessage {
     Event(ScanEvent),
     Failed(String),
@@ -84,51 +86,56 @@ impl WindowsSpike {
                     cx.background_executor()
                         .timer(Duration::from_millis(50))
                         .await;
-                    match rx.try_recv() {
-                        Ok(ScanMessage::Event(ScanEvent::ItemFound { item })) => {
-                            entity.update(cx, |this, cx| {
-                                this.items += 1;
-                                this.bytes = this.bytes.saturating_add(item.bytes);
-                                cx.notify();
-                            });
+
+                    let mut terminal = false;
+                    for _ in 0..MAX_EVENTS_PER_TICK {
+                        match rx.try_recv() {
+                            Ok(ScanMessage::Event(ScanEvent::ItemFound { item })) => {
+                                entity.update(cx, |this, cx| {
+                                    this.items += 1;
+                                    this.bytes = this.bytes.saturating_add(item.bytes);
+                                    cx.notify();
+                                });
+                            }
+                            Ok(ScanMessage::Event(ScanEvent::PermissionDenied { .. })) => {
+                                entity.update(cx, |this, cx| {
+                                    this.permission_denied += 1;
+                                    cx.notify();
+                                });
+                            }
+                            Ok(ScanMessage::Event(ScanEvent::Finished { .. }))
+                            | Ok(ScanMessage::Event(ScanEvent::Cancelled { .. })) => {
+                                entity.update(cx, |this, cx| {
+                                    this.scanning = false;
+                                    cx.notify();
+                                });
+                                terminal = true;
+                                break;
+                            }
+                            Ok(ScanMessage::Event(ScanEvent::Started { .. })) => {}
+                            Ok(ScanMessage::Failed(error)) => {
+                                entity.update(cx, |this, cx| {
+                                    this.scanning = false;
+                                    this.error = Some(error);
+                                    cx.notify();
+                                });
+                                terminal = true;
+                                break;
+                            }
+                            Err(TryRecvError::Empty) => break,
+                            Err(TryRecvError::Disconnected) => {
+                                entity.update(cx, |this, cx| {
+                                    this.scanning = false;
+                                    cx.notify();
+                                });
+                                terminal = true;
+                                break;
+                            }
                         }
-                        Ok(ScanMessage::Event(ScanEvent::PermissionDenied { .. })) => {
-                            entity.update(cx, |this, cx| {
-                                this.permission_denied += 1;
-                                cx.notify();
-                            });
-                        }
-                        Ok(ScanMessage::Event(ScanEvent::Finished { .. })) => {
-                            entity.update(cx, |this, cx| {
-                                this.scanning = false;
-                                cx.notify();
-                            });
-                            break;
-                        }
-                        Ok(ScanMessage::Event(ScanEvent::Cancelled { .. })) => {
-                            entity.update(cx, |this, cx| {
-                                this.scanning = false;
-                                cx.notify();
-                            });
-                            break;
-                        }
-                        Ok(ScanMessage::Event(ScanEvent::Started { .. })) => {}
-                        Ok(ScanMessage::Failed(error)) => {
-                            entity.update(cx, |this, cx| {
-                                this.scanning = false;
-                                this.error = Some(error);
-                                cx.notify();
-                            });
-                            break;
-                        }
-                        Err(TryRecvError::Empty) => {}
-                        Err(TryRecvError::Disconnected) => {
-                            entity.update(cx, |this, cx| {
-                                this.scanning = false;
-                                cx.notify();
-                            });
-                            break;
-                        }
+                    }
+
+                    if terminal {
+                        break;
                     }
                 }
             })
@@ -144,7 +151,11 @@ impl Render for WindowsSpike {
             .as_ref()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|| "No directory selected".into());
-        let status = if self.scanning { "Scanning…" } else { "Ready" };
+        let status = if self.scanning {
+            "Scanning…"
+        } else {
+            "Ready"
+        };
 
         div()
             .size_full()
@@ -171,7 +182,11 @@ impl Render for WindowsSpike {
                     .rounded_lg()
                     .bg(rgb(0x4f7cff))
                     .cursor_pointer()
-                    .child(if self.scanning { "Scanning…" } else { "Scan directory" })
+                    .child(if self.scanning {
+                        "Scanning…"
+                    } else {
+                        "Scan directory"
+                    })
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.start_scan(window, cx);
                     })),
