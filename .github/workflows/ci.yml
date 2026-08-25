@@ -23,5 +23,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test frontend-neutral core on Windows
         run: cargo test -p cleaner-core
+      - name: Test Windows Recycle Bin adapter
+        run: cargo test -p cleaner-windows
       - name: Check Windows GPUI spike
         run: cargo check -p cleaner-gui-windows-spike
