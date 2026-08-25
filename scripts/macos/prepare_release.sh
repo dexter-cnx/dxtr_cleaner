@@ -6,6 +6,10 @@ DIST_DIR="${DIST_DIR:-${ROOT_DIR}/dist}"
 APP_NAME="${APP_NAME:-Dxtr Cleaner}"
 ZIP_PATH="${DIST_DIR}/${APP_NAME}.zip"
 PREP_EVIDENCE_DIR="${PREP_EVIDENCE_DIR:-${DIST_DIR}/prepublish-evidence}"
+PACKAGE_SCRIPT="${PACKAGE_SCRIPT:-${ROOT_DIR}/scripts/macos/package.sh}"
+NOTARIZE_SCRIPT="${NOTARIZE_SCRIPT:-${ROOT_DIR}/scripts/macos/notarize.sh}"
+VERIFY_SCRIPT="${VERIFY_SCRIPT:-${ROOT_DIR}/scripts/macos/verify_release.sh}"
+CASK_SCRIPT="${CASK_SCRIPT:-${ROOT_DIR}/scripts/macos/generate_cask.sh}"
 
 require_env() {
   local name="$1"
@@ -31,16 +35,16 @@ if [[ "${SIGNING_IDENTITY}" == "-" ]]; then
 fi
 
 DIST_DIR="${DIST_DIR}" APP_NAME="${APP_NAME}" VERSION="${VERSION}" SIGNING_IDENTITY="${SIGNING_IDENTITY}" \
-  bash "${ROOT_DIR}/scripts/macos/package.sh"
+  bash "${PACKAGE_SCRIPT}"
 
 DIST_DIR="${DIST_DIR}" APP_NAME="${APP_NAME}" NOTARY_PROFILE="${NOTARY_PROFILE}" \
-  bash "${ROOT_DIR}/scripts/macos/notarize.sh"
+  bash "${NOTARIZE_SCRIPT}"
 
 # Pre-publication diagnostic verification deliberately skips quarantine only here.
 # The published/downloaded ZIP must still pass verify_release.sh with its default
 # QUARANTINE_REQUIRED=1 before the M4 release gate can be closed.
 ZIP_PATH="${ZIP_PATH}" EVIDENCE_DIR="${PREP_EVIDENCE_DIR}" QUARANTINE_REQUIRED=0 \
-  bash "${ROOT_DIR}/scripts/macos/verify_release.sh"
+  bash "${VERIFY_SCRIPT}"
 
 SHA256="$(awk -F= '/^sha256=/{print $2}' "${PREP_EVIDENCE_DIR}/summary.txt")"
 if [[ ! "${SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
@@ -49,7 +53,7 @@ if [[ ! "${SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
 fi
 
 VERSION="${VERSION}" SHA256="${SHA256}" URL="${URL}" \
-  bash "${ROOT_DIR}/scripts/macos/generate_cask.sh"
+  bash "${CASK_SCRIPT}"
 
 printf 'macOS release preparation passed\n'
 printf 'zip: %s\n' "${ZIP_PATH}"
