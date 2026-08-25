@@ -1,6 +1,6 @@
 CORE_PACKAGES := -p cleaner-core -p cleaner-macos -p cleaner-cli
 
-.PHONY: format format-check test clippy gui-check script-check check verify prepush ci run cli-dry-run package-macos notarize-macos generate-cask verify-macos-release
+.PHONY: format format-check test clippy gui-check script-check check verify prepush ci run cli-dry-run package-macos notarize-macos generate-cask verify-macos-release prepare-macos-release
 
 format:
 	cargo fmt --all
@@ -25,9 +25,12 @@ script-check:
 	bash -n scripts/macos/test_package_contract.sh
 	bash -n scripts/macos/verify_release.sh
 	bash -n scripts/macos/test_verify_release.sh
+	bash -n scripts/macos/prepare_release.sh
+	bash -n scripts/macos/test_prepare_release.sh
 	bash scripts/macos/test_generate_cask.sh
 	bash scripts/macos/test_package_contract.sh
 	bash scripts/macos/test_verify_release.sh
+	bash scripts/macos/test_prepare_release.sh
 
 verify: format-check test clippy gui-check script-check
 
@@ -54,3 +57,6 @@ generate-cask:
 
 verify-macos-release:
 	bash scripts/macos/verify_release.sh
+
+prepare-macos-release:
+	bash scripts/macos/prepare_release.sh
