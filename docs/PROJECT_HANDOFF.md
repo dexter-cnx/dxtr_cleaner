@@ -4,7 +4,7 @@
 
 M0–M3 are complete and merged to `main`.
 
-M4 macOS integration is functionally implemented through GPUI scheduling controls, signed/notarized packaging scripts, and Homebrew cask generation. The remaining M4 work is **real release verification**, not feature implementation: Developer ID signing, notarization/stapling/Gatekeeper evidence, publication of the exact final ZIP, and Homebrew install/uninstall smoke testing.
+M4 macOS integration is functionally implemented through GPUI scheduling controls, signed/notarized packaging, release evidence verification, Homebrew cask generation, and a two-phase release runner. The remaining M4 work is **physical release verification only**, not feature implementation: run the real Developer ID/notarization flow on macOS, publish the exact prepared ZIP, verify the quarantined download against the prepared digest, then perform Homebrew install/uninstall smoke testing.
 
 Permanent delete remains deliberately safety-locked in `cleaner-macos`; GPUI exposes Trash-only cleanup/uninstall execution.
 
@@ -103,62 +103,56 @@ dxtr-cleaner scan --category user
 
 Trash, uninstall, and permanent-delete mutation are not schedulable.
 
-`cleaner-macos::launch_agent::LaunchAgentCoordinator` is the stable frontend-facing scheduling surface. GPUI does not own:
+`cleaner-macos::launch_agent::LaunchAgentCoordinator` is the stable frontend-facing scheduling surface. GPUI does not own LaunchAgent labels, plist paths, `launchctl`, interval policy, or app-bundle CLI layout.
 
-- LaunchAgent label
-- plist path construction
-- `launchctl`
-- interval policy
-- app-bundle CLI layout
+Important durability/safety rules:
 
-The coordinator exposes status, enable-daily, and disable behavior.
-
-Important durability rules:
-
-- the scheduled CLI is the bundled `Contents/MacOS/dxtr-cleaner`
+- the scheduled CLI is bundled `Contents/MacOS/dxtr-cleaner`
 - enabling/repairing is rejected from App Translocation
-- an existing schedule can still be inspected and disabled from a translocated launch
-- status detects when a plist points at an old app location after the app is moved/renamed
-- stale schedules are surfaced to GPUI as needing repair rather than silently reported as healthy
+- existing schedules can still be inspected/disabled from a translocated launch
+- status detects stale app paths after the bundle moves
+- plist mutation fails closed on unsafe symlink/non-file states
+- bootstrap failure restores the previous plist and reactivates the prior job when appropriate
 
 ### GPUI Settings
 
-The Settings page is now a real scheduling UI.
+The Settings page supports load status, Enable Daily Smart Scan, Disable, Repair stale configuration, and explicit Disabled / Enabled / Needs repair / Error / Loading states. Scheduling I/O and `launchctl` work stay off the GPUI event loop.
 
-It supports:
+### Packaging and release tooling
 
-- load current schedule status
-- Enable Daily Smart Scan
-- Disable
-- Repair a stale app-location schedule
-- Disabled / Enabled / Needs repair / Error / Loading states
+`scripts/macos/package.sh` builds the signed `.app` and ZIP. The bundle contains both the GPUI executable and the bundled `dxtr-cleaner` CLI. CI includes a behavioral packaging-contract test so removing/signing the wrong binary cannot silently pass.
 
-Scheduling I/O and `launchctl` work run off the GPUI event loop through a worker/channel boundary.
+`scripts/macos/notarize.sh` submits the ZIP with `notarytool`, staples the app, validates the staple, performs Gatekeeper assessment, and rebuilds the final ZIP after stapling.
 
-### Packaging
+`scripts/macos/generate_cask.sh` generates `Casks/dxtr-cleaner.rb` only from an explicit version, real SHA-256, and a URL constrained to this repository's GitHub Releases path. It rejects traversal/dot-segment URL tricks and remains compatible with macOS Bash 3.2.
 
-`scripts/macos/package.sh` builds the release app bundle and ZIP.
+`scripts/macos/verify_release.sh` verifies the app extracted from the exact ZIP being hashed, requires quarantine evidence by default, writes evidence atomically only after success, and can require a prepared expected SHA so a different valid/notarized build cannot satisfy the final release gate.
 
-The bundle contains both:
+### Canonical two-phase release flow
 
-- GPUI application executable
-- `dxtr-cleaner` CLI used by scheduled scan integration
+Phase 1 — prepare on the release Mac:
 
-The packaging script supports Developer ID signing and hardened runtime. Ad-hoc signing remains local-smoke-only and does not satisfy the release gate.
+```bash
+SIGNING_IDENTITY="Developer ID Application: ..." \
+NOTARY_PROFILE=<profile> \
+VERSION=<release-version> \
+URL="https://github.com/dexter-cnx/dxtr_cleaner/releases/download/v<release-version>/Dxtr%20Cleaner.zip" \
+make prepare-macos-release
+```
 
-### Notarization
+This performs Developer ID packaging → notarization/stapling → prepublish verification → prepared SHA persistence → cask generation. It intentionally does not count local no-quarantine evidence as the final Gatekeeper gate.
 
-`scripts/macos/notarize.sh` submits the final ZIP through `notarytool`, staples the app, validates the staple, performs Gatekeeper assessment, and rebuilds the ZIP after stapling.
+Phase 2 — after publishing and downloading the exact ZIP through a quarantine-applying path:
 
-Real Apple credentials are external and must never be committed.
+```bash
+ZIP_PATH="/path/to/downloaded/Dxtr Cleaner.zip" \
+EXPECTED_SHA256_FILE="/path/to/prepared-expected-sha256" \
+make verify-macos-release
+```
 
-### Homebrew cask
+The downloaded ZIP must match the prepared digest byte-for-byte. A different signed/notarized build must fail.
 
-`scripts/macos/generate_cask.sh` generates `Casks/dxtr-cleaner.rb` only from an explicit version, real 64-hex SHA-256, and HTTPS release URL.
-
-The generator does not invent placeholder hashes and protects generated Ruby literals from interpolation.
-
-Do not publish a cask that points to an ad-hoc-signed or pre-notarization artifact.
+Real Apple credentials remain external and must never be committed.
 
 ## Permanent-delete safety lock
 
@@ -166,7 +160,7 @@ Permanent deletion remains blocked in the macOS backend.
 
 Reason: path-based `remove_file` / `remove_dir_all` cannot close the ancestor-swap TOCTOU window between validation and mutation.
 
-Do not re-enable permanent delete with another path recheck. The acceptable future implementation requires anchored directory-descriptor / no-follow filesystem mutation tying validation and deletion to the same filesystem identity.
+Do not re-enable permanent delete with another path recheck. A future implementation requires anchored directory-descriptor / no-follow filesystem mutation tying validation and deletion to the same filesystem identity.
 
 ## Quality gates
 
@@ -196,21 +190,18 @@ Upgrade only in a dedicated dependency PR.
 
 ## What remains now
 
-M4 code implementation should not expand further unless release verification exposes a real defect.
+M4 code implementation should not expand further unless physical release verification exposes a real defect.
 
-The next work is the physical release gate in [`M4_RELEASE_VERIFICATION.md`](./M4_RELEASE_VERIFICATION.md):
+The only remaining M4 gate is:
 
-1. build with the real Developer ID Application certificate
-2. verify code signing and hardened runtime
-3. submit to Apple notarization
-4. staple and pass Gatekeeper assessment
-5. smoke-test the exact final ZIP on a clean/fresh macOS context
-6. publish that exact ZIP
-7. calculate its final SHA-256
-8. generate the Homebrew cask from the published artifact
-9. run Homebrew install/uninstall smoke tests
-10. retain non-secret release evidence
+1. run `make prepare-macos-release` with the real Developer ID Application identity and notary profile
+2. retain accepted notarization/staple/prepublish evidence and the prepared SHA
+3. publish that exact ZIP to the release URL used by the cask
+4. download it through a quarantining path
+5. run `make verify-macos-release` against the prepared expected SHA
+6. perform first-launch / Settings / LaunchAgent smoke checks from a durable install location
+7. run Homebrew install/uninstall smoke tests using the generated cask
+8. retain non-secret evidence
+9. only then check off signed/notarized packaging and Homebrew in `ROADMAP.md`
 
-Do **not** mark signed/notarized packaging or Homebrew as complete in the roadmap until those real-artifact checks pass.
-
-After M4 release validation, the planned next engineering milestone is M5 Windows feasibility/platform work. A future Flutter desktop frontend remains an explicit optional path after the Rust application boundary is stable enough to support it without policy duplication.
+After M4 release validation, the planned next engineering milestone is M5 Windows feasibility/platform work. A future Flutter desktop frontend remains an optional path after the Rust application boundary is stable enough to support it without policy duplication.
