@@ -9,6 +9,7 @@ trap 'rm -rf "${TMP_DIR}"' EXIT
 MOCK_BIN="${TMP_DIR}/bin"
 DIST_DIR="${TMP_DIR}/dist"
 LOG="${TMP_DIR}/calls.log"
+EXPECTED_SHA_FILE="${TMP_DIR}/expected-sha256.txt"
 mkdir -p "${MOCK_BIN}" "${DIST_DIR}"
 
 cat >"${MOCK_BIN}/uname" <<'EOF'
@@ -51,6 +52,7 @@ chmod +x "${CASK}"
 
 PATH="${MOCK_BIN}:/usr/bin:/bin" \
 DIST_DIR="${DIST_DIR}" \
+EXPECTED_SHA256_FILE="${EXPECTED_SHA_FILE}" \
 SIGNING_IDENTITY='Developer ID Application: Example' \
 NOTARY_PROFILE='dxtr-notary' \
 VERSION='1.2.3' \
@@ -62,6 +64,7 @@ test "$(sed -n '1p' "${LOG}")" = package
 test "$(sed -n '2p' "${LOG}")" = notarize
 test "$(sed -n '3p' "${LOG}")" = verify
 grep -Fq 'cask:1.2.3:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:https://github.com/dexter-cnx/dxtr_cleaner/releases/download/v1.2.3/Dxtr%20Cleaner.zip' "${LOG}"
+test "$(tr -d '[:space:]' <"${EXPECTED_SHA_FILE}")" = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 if PATH="${MOCK_BIN}:/usr/bin:/bin" DIST_DIR="${DIST_DIR}" NOTARY_PROFILE=x VERSION=1 URL=https://example.invalid PACKAGE_SCRIPT="${PACKAGE}" NOTARIZE_SCRIPT="${NOTARIZE}" VERIFY_SCRIPT="${VERIFY}" CASK_SCRIPT="${CASK}" bash "${RUNNER}" >/dev/null 2>&1; then
   echo 'runner accepted missing SIGNING_IDENTITY' >&2
