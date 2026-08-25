@@ -2,6 +2,7 @@ mod explorer_cache_scan;
 mod local_app_data_scan;
 mod paths;
 mod temp_scan;
+mod wer_scan;
 
 use std::path::Path;
 
@@ -11,6 +12,7 @@ pub use explorer_cache_scan::WindowsExplorerCacheScan;
 pub use local_app_data_scan::WindowsLocalAppDataCacheScan;
 pub use paths::WindowsPaths;
 pub use temp_scan::WindowsTempScan;
+pub use wer_scan::WindowsWerCacheScan;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WindowsTrashBackend;
