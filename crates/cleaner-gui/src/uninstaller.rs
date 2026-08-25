@@ -121,6 +121,26 @@ pub fn spawn_uninstall(
         };
 
         match UninstallExecutor::execute(&plan, &policy, current, &cancellation, &platform) {
+            Ok(report) if report.failed_count() > 0 => {
+                let failures = report
+                    .records
+                    .iter()
+                    .filter_map(|record| {
+                        record.result.as_ref().err().map(|error| {
+                            format!("{}: {error}", record.path.display())
+                        })
+                    })
+                    .take(5)
+                    .collect::<Vec<_>>();
+                let hidden = report.failed_count().saturating_sub(failures.len());
+                let mut detail = failures.join("; ");
+                if hidden > 0 {
+                    detail.push_str(&format!("; + {hidden} more failure(s)"));
+                }
+                let _ = tx.send(UninstallMessage::Failed(format!(
+                    "uninstall backend failure(s): {detail}"
+                )));
+            }
             Ok(report) => {
                 let _ = tx.send(UninstallMessage::Completed(report));
             }
