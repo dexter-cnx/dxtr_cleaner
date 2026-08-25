@@ -1,4 +1,7 @@
-use std::{fs, io, path::{Path, PathBuf}};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 #[cfg(target_os = "macos")]
 pub(crate) fn move_path_to_trash(path: &Path) -> Result<(), String> {
@@ -59,19 +62,17 @@ fn move_regular_file_same_volume(path: &Path, trash: &Path) -> Result<(), FastTr
     for attempt in 0..10_000_u32 {
         let destination = unique_destination(trash, file_name, attempt);
         match fs::hard_link(path, &destination) {
-            Ok(()) => {
-                match fs::remove_file(path) {
-                    Ok(()) => return Ok(()),
-                    Err(error) => {
-                        let _ = fs::remove_file(&destination);
-                        return if error.kind() == io::ErrorKind::NotFound {
-                            Err(FastTrashError::SourceDisappeared)
-                        } else {
-                            Err(FastTrashError::FallbackToFinder)
-                        };
-                    }
+            Ok(()) => match fs::remove_file(path) {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    let _ = fs::remove_file(&destination);
+                    return if error.kind() == io::ErrorKind::NotFound {
+                        Err(FastTrashError::SourceDisappeared)
+                    } else {
+                        Err(FastTrashError::FallbackToFinder)
+                    };
                 }
-            }
+            },
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 return Err(FastTrashError::SourceDisappeared);
@@ -90,10 +91,7 @@ fn unique_destination(trash: &Path, file_name: &std::ffi::OsStr, attempt: u32) -
     }
 
     let original = Path::new(file_name);
-    let stem = original
-        .file_stem()
-        .unwrap_or(file_name)
-        .to_string_lossy();
+    let stem = original.file_stem().unwrap_or(file_name).to_string_lossy();
     let extension = original.extension().map(|value| value.to_string_lossy());
     let name = match extension {
         Some(extension) if !extension.is_empty() => format!("{stem} {attempt}.{extension}"),
@@ -128,7 +126,10 @@ fn move_with_finder(path: &Path) -> Result<(), String> {
     }
 
     if stderr.is_empty() {
-        Err(format!("move to Trash failed with status {}", output.status))
+        Err(format!(
+            "move to Trash failed with status {}",
+            output.status
+        ))
     } else {
         Err(format!(
             "move to Trash failed with status {}: {stderr}",
