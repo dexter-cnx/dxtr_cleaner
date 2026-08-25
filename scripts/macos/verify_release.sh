@@ -61,7 +61,6 @@ if [[ "${QUARANTINE_REQUIRED}" == "1" ]]; then
   fi
 fi
 
-# Always verify the app extracted from the exact ZIP whose digest will be published.
 ditto -x -k "${ZIP_PATH}" "${EXTRACT_DIR}"
 APP_PATH="${EXTRACT_DIR}/${APP_NAME}.app"
 GUI_PATH="${APP_PATH}/Contents/MacOS/${APP_NAME}"
@@ -97,9 +96,13 @@ if [[ ! "${SHA256}" =~ ^[0-9a-fA-F]{64}$ ]]; then
   echo "failed to calculate release ZIP SHA-256" >&2
   exit 1
 fi
-if [[ -n "${EXPECTED_SHA256}" ]] && [[ "${SHA256,,}" != "${EXPECTED_SHA256,,}" ]]; then
-  echo "release ZIP SHA-256 does not match prepared digest" >&2
-  exit 1
+if [[ -n "${EXPECTED_SHA256}" ]]; then
+  NORMALIZED_SHA256="$(printf '%s' "${SHA256}" | tr '[:upper:]' '[:lower:]')"
+  NORMALIZED_EXPECTED_SHA256="$(printf '%s' "${EXPECTED_SHA256}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "${NORMALIZED_SHA256}" != "${NORMALIZED_EXPECTED_SHA256}" ]]; then
+    echo "release ZIP SHA-256 does not match prepared digest" >&2
+    exit 1
+  fi
 fi
 printf '%s  %s\n' "${SHA256}" "${ZIP_PATH}" >"${STAGING_DIR}/sha256.txt"
 
