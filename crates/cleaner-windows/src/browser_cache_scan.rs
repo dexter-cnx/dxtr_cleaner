@@ -1,4 +1,7 @@
-use std::{fs, io, path::{Path, PathBuf}};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use cleaner_core::{CategoryScanTarget, CleanupCategory};
 
@@ -13,11 +16,19 @@ impl WindowsBrowserCacheScan {
     pub fn discover(paths: &WindowsPaths) -> io::Result<Self> {
         let mut roots = Vec::new();
         collect_chromium_profile_caches(
-            &paths.local_app_data.join("Google").join("Chrome").join("User Data"),
+            &paths
+                .local_app_data
+                .join("Google")
+                .join("Chrome")
+                .join("User Data"),
             &mut roots,
         )?;
         collect_chromium_profile_caches(
-            &paths.local_app_data.join("Microsoft").join("Edge").join("User Data"),
+            &paths
+                .local_app_data
+                .join("Microsoft")
+                .join("Edge")
+                .join("User Data"),
             &mut roots,
         )?;
         roots.sort();
@@ -119,7 +130,11 @@ mod tests {
             request.roots,
             vec![chrome_cache, chrome_code_cache, edge_gpu_cache]
         );
-        assert!(!request.roots.contains(&chrome_history_parent.join("History")));
+        assert!(
+            !request
+                .roots
+                .contains(&chrome_history_parent.join("History"))
+        );
         assert!(!request.roots.contains(&edge_random));
 
         fs::remove_dir_all(root).expect("remove fixture");
