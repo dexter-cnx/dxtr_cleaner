@@ -126,9 +126,11 @@ pub fn spawn_uninstall(
                     .records
                     .iter()
                     .filter_map(|record| {
-                        record.result.as_ref().err().map(|error| {
-                            format!("{}: {error}", record.path.display())
-                        })
+                        record
+                            .result
+                            .as_ref()
+                            .err()
+                            .map(|error| format!("{}: {error}", record.path.display()))
                     })
                     .take(5)
                     .collect::<Vec<_>>();
