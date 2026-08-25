@@ -144,19 +144,7 @@ pub fn launch_agent_plist_path(home: &Path, label: &str) -> Result<PathBuf, Stri
 
 pub fn launch_agent_status(home: &Path, label: &str) -> Result<LaunchAgentStatus, String> {
     let plist_path = launch_agent_plist_path(home, label)?;
-    let installed = match fs::symlink_metadata(&plist_path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() {
-                return Err("LaunchAgent plist must not be a symlink".into());
-            }
-            if !metadata.is_file() {
-                return Err("LaunchAgent plist path is not a regular file".into());
-            }
-            true
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
-        Err(error) => return Err(error.to_string()),
-    };
+    let installed = existing_regular_file(&plist_path)?.is_some();
     Ok(LaunchAgentStatus {
         installed,
         plist_path,
@@ -226,11 +214,31 @@ fn is_app_translocation_path(path: &Path) -> bool {
     })
 }
 
+fn existing_regular_file(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    let metadata = match fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("failed to inspect {}: {error}", path.display())),
+    };
+    if metadata.file_type().is_symlink() {
+        return Err(format!("{} must not be a symlink", path.display()));
+    }
+    if !metadata.is_file() {
+        return Err(format!("{} is not a regular file", path.display()));
+    }
+    fs::read(path)
+        .map(Some)
+        .map_err(|error| format!("failed to read {}: {error}", path.display()))
+}
+
 #[cfg(target_os = "macos")]
 pub fn install_launch_agent(home: &Path, config: &LaunchAgentConfig) -> Result<PathBuf, String> {
     config.validate()?;
     let plist = render_launch_agent_plist(config)?;
     let plist_path = config.plist_path(home)?;
+    let domain = gui_domain(home)?;
+    let previous_plist = existing_regular_file(&plist_path)?;
+
     let launch_agents = plist_path
         .parent()
         .ok_or_else(|| "LaunchAgent path has no parent directory".to_string())?;
@@ -239,40 +247,77 @@ pub fn install_launch_agent(home: &Path, config: &LaunchAgentConfig) -> Result<P
         fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
-    let previous_plist = fs::read(&plist_path).ok();
     let temporary_path = plist_path.with_extension("plist.tmp");
+    if let Ok(metadata) = fs::symlink_metadata(&temporary_path) {
+        if metadata.file_type().is_symlink() || !metadata.is_file() {
+            return Err("LaunchAgent temporary plist path is not a regular file".into());
+        }
+        fs::remove_file(&temporary_path).map_err(|error| error.to_string())?;
+    }
     fs::write(&temporary_path, plist).map_err(|error| error.to_string())?;
     fs::rename(&temporary_path, &plist_path).map_err(|error| error.to_string())?;
 
-    let domain = gui_domain(home)?;
-    let _ = Command::new("launchctl")
+    let previous_was_loaded = Command::new("launchctl")
         .args(["bootout", &domain])
         .arg(&plist_path)
-        .status();
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
 
-    let status = Command::new("launchctl")
+    let bootstrap = Command::new("launchctl")
         .args(["bootstrap", &domain])
         .arg(&plist_path)
-        .status()
-        .map_err(|error| {
-            let rollback = rollback_plist(&plist_path, previous_plist.as_deref());
-            format_bootstrap_error(error.to_string(), rollback)
-        })?;
-    if !status.success() {
-        let rollback = rollback_plist(&plist_path, previous_plist.as_deref());
-        return Err(format_bootstrap_error(
-            format!("launchctl bootstrap failed with status {status}"),
-            rollback,
-        ));
+        .status();
+    match bootstrap {
+        Ok(status) if status.success() => Ok(plist_path),
+        Ok(status) => {
+            let rollback = rollback_launch_agent(
+                &domain,
+                &plist_path,
+                previous_plist.as_deref(),
+                previous_was_loaded,
+            );
+            Err(format_bootstrap_error(
+                format!("launchctl bootstrap failed with status {status}"),
+                rollback,
+            ))
+        }
+        Err(error) => {
+            let rollback = rollback_launch_agent(
+                &domain,
+                &plist_path,
+                previous_plist.as_deref(),
+                previous_was_loaded,
+            );
+            Err(format_bootstrap_error(error.to_string(), rollback))
+        }
     }
-
-    Ok(plist_path)
 }
 
 #[cfg(target_os = "macos")]
-fn rollback_plist(plist_path: &Path, previous_plist: Option<&[u8]>) -> Result<(), String> {
+fn rollback_launch_agent(
+    domain: &str,
+    plist_path: &Path,
+    previous_plist: Option<&[u8]>,
+    previous_was_loaded: bool,
+) -> Result<(), String> {
     match previous_plist {
-        Some(previous) => fs::write(plist_path, previous).map_err(|error| error.to_string()),
+        Some(previous) => {
+            fs::write(plist_path, previous).map_err(|error| error.to_string())?;
+            if previous_was_loaded {
+                let status = Command::new("launchctl")
+                    .args(["bootstrap", domain])
+                    .arg(plist_path)
+                    .status()
+                    .map_err(|error| error.to_string())?;
+                if !status.success() {
+                    return Err(format!(
+                        "restored previous plist but failed to re-bootstrap it with status {status}"
+                    ));
+                }
+            }
+            Ok(())
+        }
         None => match fs::remove_file(plist_path) {
             Ok(()) => Ok(()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -286,7 +331,7 @@ fn format_bootstrap_error(message: String, rollback: Result<(), String>) -> Stri
     match rollback {
         Ok(()) => message,
         Err(rollback_error) => {
-            format!("{message}; additionally failed to roll back plist: {rollback_error}")
+            format!("{message}; additionally failed to roll back LaunchAgent state: {rollback_error}")
         }
     }
 }
@@ -302,22 +347,20 @@ pub fn uninstall_launch_agent(home: &Path, label: &str) -> Result<(), String> {
     let plist_path = launch_agent_plist_path(home, label)?;
     let domain = gui_domain(home)?;
 
-    if plist_path.exists() {
-        let metadata = fs::symlink_metadata(&plist_path).map_err(|error| error.to_string())?;
-        if metadata.file_type().is_symlink() || !metadata.is_file() {
-            return Err("LaunchAgent plist path is not a regular file".into());
+    match existing_regular_file(&plist_path)? {
+        None => Ok(()),
+        Some(_) => {
+            let status = Command::new("launchctl")
+                .args(["bootout", &domain])
+                .arg(&plist_path)
+                .status()
+                .map_err(|error| error.to_string())?;
+            if !status.success() {
+                return Err(format!("launchctl bootout failed with status {status}"));
+            }
+            fs::remove_file(&plist_path).map_err(|error| error.to_string())
         }
-        let status = Command::new("launchctl")
-            .args(["bootout", &domain])
-            .arg(&plist_path)
-            .status()
-            .map_err(|error| error.to_string())?;
-        if !status.success() {
-            return Err(format!("launchctl bootout failed with status {status}"));
-        }
-        fs::remove_file(&plist_path).map_err(|error| error.to_string())?;
     }
-    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -343,8 +386,11 @@ fn validate_label(label: &str) -> Result<(), String> {
 fn gui_domain(home: &Path) -> Result<String, String> {
     use std::os::unix::fs::MetadataExt;
 
-    let uid = fs::metadata(home).map_err(|error| error.to_string())?.uid();
-    Ok(format!("gui/{uid}"))
+    let metadata = fs::symlink_metadata(home).map_err(|error| error.to_string())?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err("LaunchAgent HOME path must be a real directory".into());
+    }
+    Ok(format!("gui/{}", metadata.uid()))
 }
 
 fn xml_escape(value: &str) -> String {
@@ -542,7 +588,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn status_rejects_symlinked_plist() {
+    fn status_rejects_symlinked_and_dangling_plists() {
         use std::os::unix::fs::symlink;
 
         let home = temp_home("status-symlink");
@@ -551,12 +597,29 @@ mod tests {
         let target = home.join("outside.plist");
         fs::write(&target, b"plist").expect("target fixture must be written");
         symlink(&target, &plist_path).expect("plist symlink must be created");
+        assert!(launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
+            .unwrap_err()
+            .contains("symlink"));
 
-        assert!(
-            launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
-                .unwrap_err()
-                .contains("symlink")
-        );
+        fs::remove_file(&plist_path).expect("plist symlink must be removed");
+        fs::remove_file(&target).expect("target must be removed");
+        symlink(&target, &plist_path).expect("dangling plist symlink must be created");
+        assert!(launch_agent_status(&home, DEFAULT_LAUNCH_AGENT_LABEL)
+            .unwrap_err()
+            .contains("symlink"));
+
+        fs::remove_dir_all(home).expect("temp home must be removed");
+    }
+
+    #[test]
+    fn existing_regular_file_preserves_read_errors_and_rejects_directories() {
+        let home = temp_home("existing-regular-file");
+        let directory = home.join("not-a-file");
+        fs::create_dir_all(&directory).expect("directory fixture must be created");
+        assert!(existing_regular_file(&directory)
+            .unwrap_err()
+            .contains("not a regular file"));
+        assert_eq!(existing_regular_file(&home.join("missing")).unwrap(), None);
         fs::remove_dir_all(home).expect("temp home must be removed");
     }
 
