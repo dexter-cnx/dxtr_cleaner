@@ -6,7 +6,8 @@ use crate::WindowsPaths;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WindowsExplorerCacheScan {
-    roots: Vec<PathBuf>,
+    root: Option<PathBuf>,
+    excluded_roots: Vec<PathBuf>,
 }
 
 impl WindowsExplorerCacheScan {
@@ -16,34 +17,38 @@ impl WindowsExplorerCacheScan {
             .join("Microsoft")
             .join("Windows")
             .join("Explorer");
-        let mut roots = Vec::new();
-
         let entries = match fs::read_dir(&explorer) {
             Ok(entries) => entries,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                return Ok(Self { roots });
+                return Ok(Self {
+                    root: None,
+                    excluded_roots: Vec::new(),
+                });
             }
             Err(error) => return Err(error),
         };
 
+        let mut excluded_roots = Vec::new();
         for entry in entries {
             let entry = entry?;
             let file_type = entry.file_type()?;
-            if !file_type.is_file() || file_type.is_symlink() {
-                continue;
-            }
-
             let name = entry.file_name().to_string_lossy().to_ascii_lowercase();
-            let is_cache_db = (name.starts_with("thumbcache_") || name.starts_with("iconcache_"))
+            let is_cache_db = file_type.is_file()
+                && !file_type.is_symlink()
+                && (name.starts_with("thumbcache_") || name.starts_with("iconcache_"))
                 && name.ends_with(".db");
-            if is_cache_db {
-                roots.push(entry.path());
+
+            if !is_cache_db {
+                excluded_roots.push(entry.path());
             }
         }
 
-        roots.sort();
-        roots.dedup();
-        Ok(Self { roots })
+        excluded_roots.sort();
+        excluded_roots.dedup();
+        Ok(Self {
+            root: Some(explorer),
+            excluded_roots,
+        })
     }
 }
 
@@ -53,13 +58,18 @@ impl CategoryScanTarget for WindowsExplorerCacheScan {
     }
 
     fn roots(&self) -> Vec<PathBuf> {
-        self.roots.clone()
+        self.root.iter().cloned().collect()
+    }
+
+    fn excluded_roots(&self) -> Vec<PathBuf> {
+        self.excluded_roots.clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cleaner_core::{FileSystemScanner, Scanner};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_root() -> PathBuf {
@@ -71,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn discovers_only_explorer_cache_databases() {
+    fn scans_only_explorer_cache_databases_under_directory_root() {
         let root = temp_root();
         let explorer = root.join("Microsoft/Windows/Explorer");
         fs::create_dir_all(&explorer).expect("create explorer fixture");
@@ -80,10 +90,13 @@ mod tests {
         let icon = explorer.join("iconcache_32.db");
         let unrelated = explorer.join("unrelated.db");
         let text = explorer.join("thumbcache_notes.txt");
+        let unrelated_dir = explorer.join("other");
         fs::write(&thumb, b"thumb").expect("write thumb cache");
         fs::write(&icon, b"icon").expect("write icon cache");
         fs::write(&unrelated, b"other").expect("write unrelated db");
         fs::write(&text, b"notes").expect("write text file");
+        fs::create_dir_all(&unrelated_dir).expect("create unrelated dir");
+        fs::write(unrelated_dir.join("nested.db"), b"nested").expect("write nested file");
 
         let paths = WindowsPaths {
             user_profile: root.join("Users/tester"),
@@ -97,9 +110,17 @@ mod tests {
         let request = target.request();
 
         assert_eq!(request.category, CleanupCategory::UserCache);
-        assert_eq!(request.roots, vec![icon, thumb]);
-        assert!(!request.roots.contains(&unrelated));
-        assert!(!request.roots.contains(&text));
+        assert_eq!(request.roots, vec![explorer]);
+        assert!(request.excluded_roots.contains(&unrelated));
+        assert!(request.excluded_roots.contains(&text));
+        assert!(request.excluded_roots.contains(&unrelated_dir));
+
+        let mut items = FileSystemScanner.scan(&request).expect("scan explorer cache");
+        items.sort_by(|left, right| left.path.cmp(&right.path));
+        assert_eq!(
+            items.into_iter().map(|item| item.path).collect::<Vec<_>>(),
+            vec![icon, thumb]
+        );
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
