@@ -23,7 +23,10 @@ fn move_to_recycle_bin(path: &Path) -> Result<(), String> {
         return Err("Recycle Bin path must be absolute".into());
     }
     if !path.exists() {
-        return Err(format!("Recycle Bin path does not exist: {}", path.display()));
+        return Err(format!(
+            "Recycle Bin path does not exist: {}",
+            path.display()
+        ));
     }
 
     trash::delete(path).map_err(|error| error.to_string())
