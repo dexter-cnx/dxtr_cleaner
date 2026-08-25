@@ -2,6 +2,7 @@
 members = [
   "crates/cleaner-core",
   "crates/cleaner-macos",
+  "crates/cleaner-windows",
   "crates/cleaner-cli",
   "crates/cleaner-gui",
   "crates/cleaner-gui-windows-spike",
@@ -17,6 +18,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 cleaner-core = { path = "crates/cleaner-core" }
 cleaner-macos = { path = "crates/cleaner-macos" }
+cleaner-windows = { path = "crates/cleaner-windows" }
 
 # GPUI is intentionally pinned to a Zed revision. Update only in dedicated dependency PRs.
 gpui = { git = "https://github.com/zed-industries/zed", rev = "b05f40c5546b47bcf9561136dc0fcdcd9968cb63" }
