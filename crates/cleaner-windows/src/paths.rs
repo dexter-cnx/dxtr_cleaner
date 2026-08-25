@@ -37,7 +37,8 @@ fn required_absolute(
     lookup: &mut impl FnMut(&str) -> Option<PathBuf>,
     key: &str,
 ) -> Result<PathBuf, String> {
-    let path = lookup(key).ok_or_else(|| format!("missing required Windows path variable: {key}"))?;
+    let path =
+        lookup(key).ok_or_else(|| format!("missing required Windows path variable: {key}"))?;
     if path.as_os_str().is_empty() {
         return Err(format!("empty required Windows path variable: {key}"));
     }
