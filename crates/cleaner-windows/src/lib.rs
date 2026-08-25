@@ -1,6 +1,10 @@
+mod paths;
+
 use std::path::Path;
 
 use cleaner_core::{PermanentDeleteBackend, TrashBackend};
+
+pub use paths::WindowsPaths;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct WindowsTrashBackend;
