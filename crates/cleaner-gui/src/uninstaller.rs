@@ -122,6 +122,9 @@ pub fn spawn_uninstall(
 
         match UninstallExecutor::execute(&plan, &policy, current, &cancellation, &platform) {
             Ok(report) => {
+                // Preserve the complete report even when one or more backend operations fail.
+                // The GPUI layer is responsible for surfacing per-record failure details while
+                // retaining partial successes, cancellation state, and any safety stop.
                 let _ = tx.send(UninstallMessage::Completed(report));
             }
             Err(error) => {
