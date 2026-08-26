@@ -11,6 +11,22 @@ pub enum ExecutionFailure {
     Backend(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionOutcome {
+    Executed,
+    Missing,
+    ChangedSinceScan,
+    PermissionDenied,
+    Protected,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrashByteAccounting {
+    pub moved_logical_bytes: u64,
+    pub reclaimed_bytes: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionRecord {
     pub path: PathBuf,
@@ -18,6 +34,31 @@ pub struct ExecutionRecord {
     pub action: CleanupAction,
     pub bytes: u64,
     pub result: Result<(), ExecutionFailure>,
+}
+
+impl ExecutionRecord {
+    pub fn outcome(&self) -> ExecutionOutcome {
+        match &self.result {
+            Ok(()) => ExecutionOutcome::Executed,
+            Err(ExecutionFailure::Safety(SafetyError::MissingPath)) => ExecutionOutcome::Missing,
+            Err(ExecutionFailure::Safety(SafetyError::PathRevalidationFailed)) => {
+                ExecutionOutcome::ChangedSinceScan
+            }
+            Err(ExecutionFailure::Safety(
+                SafetyError::SymlinkSelected
+                | SafetyError::ProtectedRoot
+                | SafetyError::OutsideAllowedRoots
+                | SafetyError::DestructiveActionsDisabled,
+            )) => ExecutionOutcome::Protected,
+            Err(ExecutionFailure::Backend(message)) if is_missing_backend_message(message) => {
+                ExecutionOutcome::Missing
+            }
+            Err(ExecutionFailure::Backend(message)) if is_permission_backend_message(message) => {
+                ExecutionOutcome::PermissionDenied
+            }
+            Err(ExecutionFailure::Backend(_)) => ExecutionOutcome::Failed,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -31,6 +72,13 @@ impl ExecutionReport {
         self.records
             .iter()
             .filter(|record| record.result.is_ok())
+            .count()
+    }
+
+    pub fn outcome_count(&self, outcome: ExecutionOutcome) -> usize {
+        self.records
+            .iter()
+            .filter(|record| record.outcome() == outcome)
             .count()
     }
 
@@ -56,6 +104,13 @@ impl ExecutionReport {
             .sum()
     }
 
+    pub fn trash_accounting(&self) -> TrashByteAccounting {
+        TrashByteAccounting {
+            moved_logical_bytes: self.moved_bytes(),
+            reclaimed_bytes: None,
+        }
+    }
+
     pub fn permanently_deleted_bytes(&self) -> u64 {
         self.records
             .iter()
@@ -68,15 +123,21 @@ impl ExecutionReport {
 }
 
 fn is_raced_away_record(record: &ExecutionRecord) -> bool {
-    match &record.result {
-        Err(ExecutionFailure::Safety(SafetyError::MissingPath)) => true,
-        Err(ExecutionFailure::Backend(message)) => {
-            let normalized = message.to_ascii_lowercase();
-            normalized.contains("path no longer exists")
-                || normalized.contains("path disappeared before finder")
-        }
-        _ => false,
-    }
+    record.outcome() == ExecutionOutcome::Missing
+}
+
+fn is_missing_backend_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("path no longer exists")
+        || normalized.contains("path disappeared before finder")
+        || normalized.contains("no such file")
+}
+
+fn is_permission_backend_message(message: &str) -> bool {
+    let normalized = message.to_ascii_lowercase();
+    normalized.contains("permission denied")
+        || normalized.contains("operation not permitted")
+        || normalized.contains("not permitted")
 }
 
 pub trait TrashBackend {
