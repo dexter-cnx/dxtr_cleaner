@@ -16,10 +16,24 @@ use gpui::{
 };
 use gpui_platform::application;
 
-const MAX_EVENTS_PER_TICK: usize = 128;
+const MAX_MESSAGES_PER_TICK: usize = 128;
+const EVENT_BATCH_SIZE: usize = 256;
+
+#[derive(Default)]
+struct ScanDelta {
+    items: usize,
+    bytes: u64,
+    permission_denied: usize,
+}
+
+impl ScanDelta {
+    fn is_empty(&self) -> bool {
+        self.items == 0 && self.bytes == 0 && self.permission_denied == 0
+    }
+}
 
 enum ScanMessage {
-    Event(ScanEvent),
+    Delta(ScanDelta),
     Complete,
     Failed(String),
 }
@@ -85,19 +99,43 @@ impl WindowsSpike {
 
             let cancellation = CancellationToken::new();
             let scanner = FileSystemScanner;
+            let mut pending = ScanDelta::default();
+            let mut pending_events = 0usize;
+
             for request in requests {
-                let mut sink = |event| match event {
-                    ScanEvent::ItemFound { .. } | ScanEvent::PermissionDenied { .. } => {
-                        let _ = tx.send(ScanMessage::Event(event));
+                let mut sink = |event| {
+                    match event {
+                        ScanEvent::ItemFound { item } => {
+                            pending.items += 1;
+                            pending.bytes = pending.bytes.saturating_add(item.bytes);
+                            pending_events += 1;
+                        }
+                        ScanEvent::PermissionDenied { .. } => {
+                            pending.permission_denied += 1;
+                            pending_events += 1;
+                        }
+                        ScanEvent::Started { .. }
+                        | ScanEvent::Finished { .. }
+                        | ScanEvent::Cancelled { .. } => {}
                     }
-                    ScanEvent::Started { .. }
-                    | ScanEvent::Finished { .. }
-                    | ScanEvent::Cancelled { .. } => {}
+
+                    if pending_events >= EVENT_BATCH_SIZE {
+                        let delta = std::mem::take(&mut pending);
+                        pending_events = 0;
+                        let _ = tx.send(ScanMessage::Delta(delta));
+                    }
                 };
                 if let Err(error) = scanner.scan_with(&request, &cancellation, &mut sink) {
+                    if !pending.is_empty() {
+                        let _ = tx.send(ScanMessage::Delta(std::mem::take(&mut pending)));
+                    }
                     let _ = tx.send(ScanMessage::Failed(error.to_string()));
                     return;
                 }
+            }
+
+            if !pending.is_empty() {
+                let _ = tx.send(ScanMessage::Delta(pending));
             }
             let _ = tx.send(ScanMessage::Complete);
         });
@@ -111,26 +149,18 @@ impl WindowsSpike {
                         .await;
 
                     let mut terminal = false;
-                    for _ in 0..MAX_EVENTS_PER_TICK {
+                    for _ in 0..MAX_MESSAGES_PER_TICK {
                         match rx.try_recv() {
-                            Ok(ScanMessage::Event(ScanEvent::ItemFound { item })) => {
+                            Ok(ScanMessage::Delta(delta)) => {
                                 entity.update(cx, |this, cx| {
-                                    this.items += 1;
-                                    this.bytes = this.bytes.saturating_add(item.bytes);
+                                    this.items = this.items.saturating_add(delta.items);
+                                    this.bytes = this.bytes.saturating_add(delta.bytes);
+                                    this.permission_denied = this
+                                        .permission_denied
+                                        .saturating_add(delta.permission_denied);
                                     cx.notify();
                                 });
                             }
-                            Ok(ScanMessage::Event(ScanEvent::PermissionDenied { .. })) => {
-                                entity.update(cx, |this, cx| {
-                                    this.permission_denied += 1;
-                                    cx.notify();
-                                });
-                            }
-                            Ok(ScanMessage::Event(
-                                ScanEvent::Started { .. }
-                                | ScanEvent::Finished { .. }
-                                | ScanEvent::Cancelled { .. },
-                            )) => {}
                             Ok(ScanMessage::Complete) => {
                                 entity.update(cx, |this, cx| {
                                     this.scanning = false;
