@@ -1,4 +1,6 @@
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, sync::Arc};
+
+use same_file::Handle;
 
 use crate::{
     CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, safety::is_protected_broad_root,
@@ -9,16 +11,19 @@ pub struct AllowedRoot {
     pub category: CleanupCategory,
     pub path: PathBuf,
     canonical_path: Option<PathBuf>,
+    identity: Option<Arc<Handle>>,
 }
 
 impl AllowedRoot {
     pub fn new(category: CleanupCategory, path: impl Into<PathBuf>) -> Self {
         let path = path.into();
+        let identity = Handle::from_path(&path).ok().map(Arc::new);
         let canonical_path = fs::canonicalize(&path).ok();
         Self {
             category,
             path,
             canonical_path,
+            identity,
         }
     }
 }
@@ -114,7 +119,9 @@ impl Planner {
                 return false;
             }
 
-            let Some(pinned_root) = allowed.canonical_path.as_ref() else {
+            let (Some(pinned_root), Some(pinned_identity)) =
+                (allowed.canonical_path.as_ref(), allowed.identity.as_ref())
+            else {
                 return false;
             };
 
@@ -129,6 +136,13 @@ impl Planner {
                 return false;
             };
             if current_root != *pinned_root {
+                return false;
+            }
+
+            let Ok(current_identity) = Handle::from_path(&allowed.path) else {
+                return false;
+            };
+            if current_identity != **pinned_identity {
                 return false;
             }
 
@@ -272,6 +286,33 @@ mod tests {
         );
 
         fs::remove_dir_all(root).expect("remove temp root");
+    }
+
+    #[test]
+    fn execution_rejects_allow_list_root_replaced_after_pinning() {
+        let parent = temp_root("identity-swap-parent");
+        let root = parent.join("cache");
+        let moved_root = parent.join("cache-original");
+        fs::create_dir_all(&root).expect("create allow-list root");
+        let original_child = root.join("cache.bin");
+        fs::write(&original_child, b"original").expect("write original cache file");
+
+        let policy = ExecutionPolicy::enabled(vec![AllowedRoot::new(
+            CleanupCategory::UserCache,
+            root.clone(),
+        )]);
+        let scan_item = item(original_child, CleanupCategory::UserCache, false);
+
+        fs::rename(&root, &moved_root).expect("move original root");
+        fs::create_dir_all(&root).expect("create replacement root");
+        fs::write(root.join("cache.bin"), b"replacement").expect("write replacement cache file");
+
+        assert_eq!(
+            Planner::validate_item_for_execution(&scan_item, &policy),
+            Err(SafetyError::OutsideAllowedRoots)
+        );
+
+        fs::remove_dir_all(parent).expect("remove fixture");
     }
 
     #[cfg(unix)]
