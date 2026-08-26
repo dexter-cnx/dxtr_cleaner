@@ -19,9 +19,11 @@ impl WindowsSmartCleanup {
             .requests()
             .iter()
             .flat_map(|request| {
-                request.roots.iter().cloned().map(|root| {
-                    AllowedRoot::new(request.category, root)
-                })
+                request
+                    .roots
+                    .iter()
+                    .cloned()
+                    .map(|root| AllowedRoot::new(request.category, root))
             })
             .collect();
 
@@ -177,8 +179,7 @@ mod tests {
         let moved = root.join("Temp-original");
         fs::rename(&cache_root, &moved).expect("move original provider root");
         fs::create_dir_all(&cache_root).expect("create replacement provider root");
-        fs::write(cache_root.join("cache.bin"), b"replacement")
-            .expect("write replacement fixture");
+        fs::write(cache_root.join("cache.bin"), b"replacement").expect("write replacement fixture");
 
         let backend = RecordingBackend::default();
         let report = cleanup
@@ -187,7 +188,13 @@ mod tests {
 
         assert_eq!(report.succeeded_count(), 0);
         assert_eq!(report.failed_count(), 1);
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
