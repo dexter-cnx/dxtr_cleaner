@@ -32,10 +32,8 @@ impl WindowsDisposableCleanup {
         cancellation: &CancellationToken,
         backend: &dyn CleanupBackend,
     ) -> Result<ExecutionReport, SafetyError> {
-        let policy = ExecutionPolicy::enabled(vec![AllowedRoot::new(
-            CleanupCategory::UserCache,
-            root,
-        )]);
+        let policy =
+            ExecutionPolicy::enabled(vec![AllowedRoot::new(CleanupCategory::UserCache, root)]);
         let action_policy = CategoryActionPolicy::trash_only();
 
         CleanupExecutor::execute(plan, &policy, &action_policy, cancellation, backend)
@@ -140,7 +138,13 @@ mod tests {
 
         assert_eq!(report.succeeded_count(), 0);
         assert_eq!(report.failed_count(), 1);
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
 
         fs::remove_dir_all(root).expect("remove root fixture");
         fs::remove_dir_all(outside).expect("remove outside fixture");
