@@ -170,7 +170,13 @@ mod tests {
 
         assert_eq!(report.succeeded_count(), 0);
         assert_eq!(report.failed_count(), 1);
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
 
         fs::remove_dir_all(root).expect("remove root fixture");
         fs::remove_dir_all(outside).expect("remove outside fixture");
@@ -199,8 +205,17 @@ mod tests {
             &backend,
         );
 
-        assert_eq!(result, Err(WindowsDisposableCleanupError::RootIdentityChanged));
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
+        assert_eq!(
+            result,
+            Err(WindowsDisposableCleanupError::RootIdentityChanged)
+        );
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
 
         fs::remove_dir_all(parent).expect("remove fixture");
     }
