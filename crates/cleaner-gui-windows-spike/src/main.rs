@@ -7,7 +7,8 @@ use std::{
 };
 
 use cleaner_core::{
-    CancellationToken, CleanupCategory, FileSystemScanner, ScanEvent, ScanItem, ScanRequest, Scanner,
+    CancellationToken, CleanupCategory, FileSystemScanner, ScanEvent, ScanItem, ScanRequest,
+    Scanner,
 };
 use cleaner_windows::{WindowsDisposableCleanup, WindowsPaths, WindowsScanSet};
 use gpui::{
