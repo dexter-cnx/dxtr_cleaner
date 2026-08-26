@@ -17,8 +17,8 @@ pub struct AllowedRoot {
 impl AllowedRoot {
     pub fn new(category: CleanupCategory, path: impl Into<PathBuf>) -> Self {
         let path = path.into();
-        let canonical_path = fs::canonicalize(&path).ok();
         let identity = Handle::from_path(&path).ok().map(Arc::new);
+        let canonical_path = fs::canonicalize(&path).ok();
         Self {
             category,
             path,
