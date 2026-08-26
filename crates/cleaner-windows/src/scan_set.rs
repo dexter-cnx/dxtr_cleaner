@@ -3,9 +3,8 @@ use std::io;
 use cleaner_core::{CategoryScanTarget, ScanRequest};
 
 use crate::{
-    WindowsBrowserCacheScan, WindowsBuildCacheScan, WindowsDevCacheScan,
-    WindowsExplorerCacheScan, WindowsLocalAppDataCacheScan, WindowsPaths, WindowsTempScan,
-    WindowsWerCacheScan,
+    WindowsBrowserCacheScan, WindowsBuildCacheScan, WindowsDevCacheScan, WindowsExplorerCacheScan,
+    WindowsLocalAppDataCacheScan, WindowsPaths, WindowsTempScan, WindowsWerCacheScan,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,7 +42,11 @@ impl WindowsScanSet {
 mod tests {
     use super::*;
     use cleaner_core::CleanupCategory;
-    use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     fn temp_root() -> PathBuf {
         let nonce = SystemTime::now()
@@ -72,14 +75,22 @@ mod tests {
         let set = WindowsScanSet::discover(&paths).expect("discover Windows scan set");
         let requests = set.requests();
 
-        assert!(requests.iter().any(|request| request.category == CleanupCategory::Node));
+        assert!(
+            requests
+                .iter()
+                .any(|request| request.category == CleanupCategory::Node)
+        );
         assert!(requests.iter().any(|request| {
             request.category == CleanupCategory::UserCache
-                && request.roots.contains(&root.join("Packages/Vendor.App/LocalCache"))
+                && request
+                    .roots
+                    .contains(&root.join("Packages/Vendor.App/LocalCache"))
         }));
         assert!(requests.iter().any(|request| {
             request.category == CleanupCategory::UserCache
-                && request.roots.contains(&root.join("Google/Chrome/User Data/Default/Cache"))
+                && request
+                    .roots
+                    .contains(&root.join("Google/Chrome/User Data/Default/Cache"))
         }));
         assert!(requests.iter().all(|request| !request.roots.is_empty()));
 
