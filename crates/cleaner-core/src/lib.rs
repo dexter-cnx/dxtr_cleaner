@@ -25,8 +25,8 @@ pub use app_protection::{
 };
 pub use bundle_identifier::{is_apple_bundle_identifier, is_safe_bundle_identifier};
 pub use executor::{
-    CleanupBackend, CleanupExecutor, ExecutionFailure, ExecutionRecord, ExecutionReport,
-    PermanentDeleteBackend, TrashBackend,
+    CleanupBackend, CleanupExecutor, ExecutionFailure, ExecutionOutcome, ExecutionRecord,
+    ExecutionReport, PermanentDeleteBackend, TrashBackend, TrashByteAccounting,
 };
 pub use model::{CleanupCategory, CleanupPlan, CleanupPlanItem, ScanItem, ScanSummary};
 pub use orphan::{OrphanCandidate, OrphanFinder, OrphanFinderIssue, OrphanReport};
