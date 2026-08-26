@@ -16,7 +16,9 @@ use cleaner_core::{PermanentDeleteBackend, TrashBackend};
 pub use browser_cache_scan::WindowsBrowserCacheScan;
 pub use build_cache_scan::WindowsBuildCacheScan;
 pub use dev_cache_scan::WindowsDevCacheScan;
-pub use disposable_cleanup::WindowsDisposableCleanup;
+pub use disposable_cleanup::{
+    WindowsDisposableCleanup, WindowsDisposableCleanupError, WindowsDisposableCleanupRoot,
+};
 pub use explorer_cache_scan::WindowsExplorerCacheScan;
 pub use local_app_data_scan::WindowsLocalAppDataCacheScan;
 pub use paths::WindowsPaths;
