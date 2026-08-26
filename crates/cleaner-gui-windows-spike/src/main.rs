@@ -9,16 +9,32 @@ use std::{
 use cleaner_core::{
     CancellationToken, CleanupCategory, FileSystemScanner, ScanEvent, ScanRequest, Scanner,
 };
+use cleaner_windows::{WindowsPaths, WindowsScanSet};
 use gpui::{
     App, Bounds, Context, Render, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb,
     size,
 };
 use gpui_platform::application;
 
-const MAX_EVENTS_PER_TICK: usize = 128;
+const MAX_MESSAGES_PER_TICK: usize = 128;
+const EVENT_BATCH_SIZE: usize = 256;
+
+#[derive(Default)]
+struct ScanDelta {
+    items: usize,
+    bytes: u64,
+    permission_denied: usize,
+}
+
+impl ScanDelta {
+    fn is_empty(&self) -> bool {
+        self.items == 0 && self.bytes == 0 && self.permission_denied == 0
+    }
+}
 
 enum ScanMessage {
-    Event(ScanEvent),
+    Delta(ScanDelta),
+    Complete,
     Failed(String),
 }
 
@@ -47,14 +63,6 @@ impl WindowsSpike {
         if self.scanning {
             return;
         }
-        let Some(root) = self.root.clone() else {
-            self.error = Some(
-                "Pass a disposable directory as the first command-line argument to run the spike."
-                    .into(),
-            );
-            cx.notify();
-            return;
-        };
 
         self.scanning = true;
         self.items = 0;
@@ -62,21 +70,74 @@ impl WindowsSpike {
         self.permission_denied = 0;
         self.error = None;
 
+        let root = self.root.clone();
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
-            let request = ScanRequest {
-                category: CleanupCategory::UserCache,
-                roots: vec![root],
-                excluded_roots: Vec::new(),
+            let requests = match root {
+                Some(root) => vec![ScanRequest {
+                    category: CleanupCategory::UserCache,
+                    roots: vec![root],
+                    excluded_roots: Vec::new(),
+                }],
+                None => {
+                    let paths = match WindowsPaths::discover() {
+                        Ok(paths) => paths,
+                        Err(error) => {
+                            let _ = tx.send(ScanMessage::Failed(error));
+                            return;
+                        }
+                    };
+                    match WindowsScanSet::discover(&paths) {
+                        Ok(set) => set.into_requests(),
+                        Err(error) => {
+                            let _ = tx.send(ScanMessage::Failed(error.to_string()));
+                            return;
+                        }
+                    }
+                }
             };
+
             let cancellation = CancellationToken::new();
             let scanner = FileSystemScanner;
-            let mut sink = |event| {
-                let _ = tx.send(ScanMessage::Event(event));
-            };
-            if let Err(error) = scanner.scan_with(&request, &cancellation, &mut sink) {
-                let _ = tx.send(ScanMessage::Failed(error.to_string()));
+            let mut pending = ScanDelta::default();
+            let mut pending_events = 0usize;
+
+            for request in requests {
+                let mut sink = |event| {
+                    match event {
+                        ScanEvent::ItemFound { item } => {
+                            pending.items += 1;
+                            pending.bytes = pending.bytes.saturating_add(item.bytes);
+                            pending_events += 1;
+                        }
+                        ScanEvent::PermissionDenied { .. } => {
+                            pending.permission_denied += 1;
+                            pending_events += 1;
+                        }
+                        ScanEvent::Started { .. }
+                        | ScanEvent::Finished { .. }
+                        | ScanEvent::Cancelled { .. } => {}
+                    }
+
+                    if pending_events >= EVENT_BATCH_SIZE {
+                        let delta = std::mem::take(&mut pending);
+                        pending_events = 0;
+                        let _ = tx.send(ScanMessage::Delta(delta));
+                    }
+                };
+                if let Err(error) = scanner.scan_with(&request, &cancellation, &mut sink) {
+                    if !pending.is_empty() {
+                        let _ = tx.send(ScanMessage::Delta(std::mem::take(&mut pending)));
+                    }
+                    let _ = tx.send(ScanMessage::Failed(error.to_string()));
+                    return;
+                }
             }
+
+            if !pending.is_empty() {
+                let _ = tx.send(ScanMessage::Delta(pending));
+            }
+            let _ = tx.send(ScanMessage::Complete);
         });
 
         let entity = cx.entity();
@@ -88,23 +149,19 @@ impl WindowsSpike {
                         .await;
 
                     let mut terminal = false;
-                    for _ in 0..MAX_EVENTS_PER_TICK {
+                    for _ in 0..MAX_MESSAGES_PER_TICK {
                         match rx.try_recv() {
-                            Ok(ScanMessage::Event(ScanEvent::ItemFound { item })) => {
+                            Ok(ScanMessage::Delta(delta)) => {
                                 entity.update(cx, |this, cx| {
-                                    this.items += 1;
-                                    this.bytes = this.bytes.saturating_add(item.bytes);
+                                    this.items = this.items.saturating_add(delta.items);
+                                    this.bytes = this.bytes.saturating_add(delta.bytes);
+                                    this.permission_denied = this
+                                        .permission_denied
+                                        .saturating_add(delta.permission_denied);
                                     cx.notify();
                                 });
                             }
-                            Ok(ScanMessage::Event(ScanEvent::PermissionDenied { .. })) => {
-                                entity.update(cx, |this, cx| {
-                                    this.permission_denied += 1;
-                                    cx.notify();
-                                });
-                            }
-                            Ok(ScanMessage::Event(ScanEvent::Finished { .. }))
-                            | Ok(ScanMessage::Event(ScanEvent::Cancelled { .. })) => {
+                            Ok(ScanMessage::Complete) => {
                                 entity.update(cx, |this, cx| {
                                     this.scanning = false;
                                     cx.notify();
@@ -112,7 +169,6 @@ impl WindowsSpike {
                                 terminal = true;
                                 break;
                             }
-                            Ok(ScanMessage::Event(ScanEvent::Started { .. })) => {}
                             Ok(ScanMessage::Failed(error)) => {
                                 entity.update(cx, |this, cx| {
                                     this.scanning = false;
@@ -150,11 +206,18 @@ impl Render for WindowsSpike {
             .root
             .as_ref()
             .map(|path| path.display().to_string())
-            .unwrap_or_else(|| "No directory selected".into());
+            .unwrap_or_else(|| "Windows Smart Scan providers".into());
         let status = if self.scanning {
             "Scanning…"
         } else {
             "Ready"
+        };
+        let action = if self.scanning {
+            "Scanning…"
+        } else if self.root.is_some() {
+            "Scan directory"
+        } else {
+            "Run Smart Scan"
         };
 
         div()
@@ -182,17 +245,13 @@ impl Render for WindowsSpike {
                     .rounded_lg()
                     .bg(rgb(0x4f7cff))
                     .cursor_pointer()
-                    .child(if self.scanning {
-                        "Scanning…"
-                    } else {
-                        "Scan directory"
-                    })
+                    .child(action)
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.start_scan(window, cx);
                     })),
             )
             .child(div().text_color(rgb(0xa9afb8)).child(
-                "Read-only feasibility harness: no Recycle Bin or delete operation is wired yet.",
+                "Read-only Windows scan flow: Smart Scan uses the shared provider set; passing a directory keeps the disposable manual smoke-test mode.",
             ))
     }
 }
