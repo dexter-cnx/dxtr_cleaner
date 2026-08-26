@@ -245,7 +245,13 @@ mod tests {
 
         assert_eq!(report.succeeded_count(), 0);
         assert_eq!(report.failed_count(), 1);
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
@@ -273,7 +279,10 @@ mod tests {
 
         assert_eq!(report.succeeded_count(), 1);
         assert_eq!(backend.trashed.lock().expect("lock trashed paths").len(), 1);
-        assert!(late_file.exists(), "unreviewed descendant must remain untouched");
+        assert!(
+            late_file.exists(),
+            "unreviewed descendant must remain untouched"
+        );
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
@@ -303,7 +312,13 @@ mod tests {
 
         assert_eq!(report.succeeded_count(), 0);
         assert_eq!(report.failed_count(), 1);
-        assert!(backend.trashed.lock().expect("lock trashed paths").is_empty());
+        assert!(
+            backend
+                .trashed
+                .lock()
+                .expect("lock trashed paths")
+                .is_empty()
+        );
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
