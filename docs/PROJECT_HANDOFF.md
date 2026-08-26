@@ -6,6 +6,8 @@ M0–M3 are complete and merged to `main`.
 
 M4 macOS integration is functionally implemented through GPUI scheduling controls, signed/notarized packaging, release evidence verification, Homebrew cask generation, and a two-phase release runner. The remaining M4 work is **physical release verification only**, not feature implementation: run the real Developer ID/notarization flow on macOS, publish the exact prepared ZIP, verify the quarantined download against the prepared digest, then perform Homebrew install/uninstall smoke testing.
 
+M5 Windows work has progressed beyond the original feasibility spike into platform adapters, Smart Scan providers, Recycle Bin integration, and the shared Smart Scan cleanup coordinator. The coordinator derives its execution allow-list from the discovered Windows scan set, pins provider-root identity before review, uses the shared planner/executor, and keeps permanent deletion safety-locked. Windows GPUI mutation wiring remains a separate follow-up slice so policy is not duplicated in the frontend.
+
 Permanent delete remains deliberately safety-locked in `cleaner-macos`; GPUI exposes Trash-only cleanup/uninstall execution.
 
 For a code-oriented tour, read [`CODE_WALKTHROUGH.md`](./CODE_WALKTHROUGH.md). For the final M4 release gate, follow [`M4_RELEASE_VERIFICATION.md`](./M4_RELEASE_VERIFICATION.md).
@@ -162,6 +164,28 @@ Reason: path-based `remove_file` / `remove_dir_all` cannot close the ancestor-sw
 
 Do not re-enable permanent delete with another path recheck. A future implementation requires anchored directory-descriptor / no-follow filesystem mutation tying validation and deletion to the same filesystem identity.
 
+## Product trust / cleanup UX backlog
+
+A review of `yunweneric/tidy` highlighted several behavior-level ideas that fit Dxtr Cleaner's safety-first identity. Treat them as product inspiration only; do not copy implementation code. Tidy is GPL-3.0 while Dxtr Cleaner has its own licensing boundary.
+
+Prioritize these after the current Windows cleanup wiring slice and macOS usability stabilization:
+
+1. **Honest disk accounting** — distinguish logical file length from allocated/on-disk size where the platform can provide it. Execution reports must distinguish bytes moved to Trash from bytes actually reclaimed; moving to Trash must never be presented as immediate freed space.
+2. **Richer per-item execution outcomes** — expose typed item results such as executed, skipped, changed since scan, permission denied, protected, missing, failed, and cancelled rather than collapsing failures into a single aggregate state.
+3. **User-facing safety tiers** — retain the existing evidence/confidence policy in core, but map it to clear presentation semantics such as Safe / Review / Risky. Only genuinely safe findings should default selected; inferred ownership/orphans remain review-only.
+4. **Permission and scan-coverage health** — show whether scan coverage is full or partial, why locations were skipped, Full Disk Access state on macOS, a Settings shortcut, and an explicit re-check action. Missing permissions must result in `Partial scan`, never a misleading confident zero.
+5. **Smart Care aggregation** — provide one orchestration surface across existing typed providers/categories while preserving their independent requests, policy, review state, and execution allow-lists. Do not move cleanup rules into the UI.
+6. **Cleanup history / recovery** — record cleanup sessions and make Trash-based operations easier to inspect and recover through reveal/restore flows where the platform supports trustworthy restoration.
+7. **Space Lens foundation** — later add frontend-neutral directory-size aggregation/top-offender APIs in Rust, followed by a treemap or equivalent disk visualization in the frontend. Do not let visualization requirements leak into core models.
+
+Potential sequencing:
+
+- `macos-cleanup-trust-ux`: allocated/logical size semantics, honest Trash accounting, partial-scan/permission health, safety-tier presentation, richer execution results
+- `cleanup-history-and-restore`: cleanup-session history plus reveal/restore capability
+- `space-lens-foundation`: Rust directory aggregation API before visual frontend work
+
+Explicitly out of scope for now: clipboard history, network metering, and AI-usage tracking. Those are useful general Mac-utility features but would broaden the product beyond its cleaner/uninstaller focus.
+
 ## Quality gates
 
 Local development:
@@ -176,7 +200,7 @@ CI equivalent:
 make ci
 ```
 
-The repository also has a development-branch auto-format workflow. Because GitHub's `GITHUB_TOKEN` does not recursively trigger arbitrary follow-on workflows from bot-pushed formatting commits, always ensure a real CI run exists for the final PR head before merging.
+The repository also has a development-branch auto-format workflow. Because GitHub's `GITHUB_TOKEN` does not recursively trigger arbitrary follow-on workflows from bot-pushed formatting commits, always ensure a real CI run exists for the final PR head before merging code changes. A documentation-only handoff update made after an already-green code head may be merged without waiting for another CI cycle once the final diff is confirmed to contain no code, workflow, build, or configuration changes beyond that already-green head.
 
 ## GPUI dependency
 
@@ -204,4 +228,4 @@ The only remaining M4 gate is:
 8. retain non-secret evidence
 9. only then check off signed/notarized packaging and Homebrew in `ROADMAP.md`
 
-After M4 release validation, the planned next engineering milestone is M5 Windows feasibility/platform work. A future Flutter desktop frontend remains an optional path after the Rust application boundary is stable enough to support it without policy duplication.
+For M5, the next engineering slice after the Windows Smart Scan cleanup coordinator is to retain reviewed Windows Smart Scan items in the Windows GPUI spike and invoke the shared coordinator without duplicating execution policy in UI code. A future Flutter desktop frontend remains an optional path after the Rust application boundary is stable enough to support it without policy duplication.
