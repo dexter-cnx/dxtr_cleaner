@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 cleaner-core.workspace = true
+same-file = "1.0.6"
 
 [target.'cfg(windows)'.dependencies]
 trash = "5.2.6"
