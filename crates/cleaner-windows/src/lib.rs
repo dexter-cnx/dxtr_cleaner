@@ -1,4 +1,5 @@
 mod browser_cache_scan;
+mod build_cache_scan;
 mod dev_cache_scan;
 mod explorer_cache_scan;
 mod local_app_data_scan;
@@ -11,6 +12,7 @@ use std::path::Path;
 use cleaner_core::{PermanentDeleteBackend, TrashBackend};
 
 pub use browser_cache_scan::WindowsBrowserCacheScan;
+pub use build_cache_scan::WindowsBuildCacheScan;
 pub use dev_cache_scan::WindowsDevCacheScan;
 pub use explorer_cache_scan::WindowsExplorerCacheScan;
 pub use local_app_data_scan::WindowsLocalAppDataCacheScan;
