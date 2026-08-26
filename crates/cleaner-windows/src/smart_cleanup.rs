@@ -2,8 +2,8 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use cleaner_core::{
     AllowedRoot, CancellationToken, CategoryActionPolicy, CleanupAction, CleanupBackend,
-    CleanupExecutor, CleanupPlan, CleanupPlanItem, ExecutionFailure, ExecutionPolicy,
-    ExecutionRecord, ExecutionReport, Planner, SafetyError, ScanItem,
+    CleanupExecutor, CleanupPlan, ExecutionFailure, ExecutionPolicy, ExecutionRecord,
+    ExecutionReport, Planner, SafetyError, ScanItem,
 };
 use same_file::Handle;
 
@@ -287,6 +287,7 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn smart_cleanup_rejects_provider_root_replaced_after_session_pinning() {
         let root = temp_root("root-swap");
@@ -319,6 +320,22 @@ mod tests {
                 .expect("lock trashed paths")
                 .is_empty()
         );
+
+        fs::remove_dir_all(root).expect("remove fixture");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn smart_cleanup_pinned_provider_root_blocks_windows_rename_swap() {
+        let root = temp_root("root-swap-windows");
+        let scan_set = fixture_scan_set(&root);
+        let _cleanup = WindowsSmartCleanup::from_scan_set(&scan_set);
+        let cache_root = root.join("Temp");
+        let moved = root.join("Temp-original");
+
+        let error = fs::rename(&cache_root, &moved)
+            .expect_err("pinned provider handle should prevent Windows root replacement");
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
 
         fs::remove_dir_all(root).expect("remove fixture");
     }
