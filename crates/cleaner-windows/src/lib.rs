@@ -24,7 +24,7 @@ pub use explorer_cache_scan::WindowsExplorerCacheScan;
 pub use local_app_data_scan::WindowsLocalAppDataCacheScan;
 pub use paths::WindowsPaths;
 pub use scan_set::WindowsScanSet;
-pub use smart_cleanup::WindowsSmartCleanup;
+pub use smart_cleanup::{WindowsSmartCleanup, WindowsSmartCleanupPlan};
 pub use temp_scan::WindowsTempScan;
 pub use wer_scan::WindowsWerCacheScan;
 
