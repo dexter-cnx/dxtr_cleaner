@@ -4,13 +4,31 @@
 
 M0–M3 are complete and merged to `main`.
 
-M4 macOS integration is functionally implemented through GPUI scheduling controls, signed/notarized packaging, release evidence verification, Homebrew cask generation, and a two-phase release runner. The remaining M4 work is **physical release verification only**, not feature implementation: run the real Developer ID/notarization flow on macOS, publish the exact prepared ZIP, verify the quarantined download against the prepared digest, then perform Homebrew install/uninstall smoke testing.
+M4 macOS integration is functionally implemented through GPUI scheduling controls, signed/notarized packaging, release evidence verification, Homebrew cask generation, and a two-phase release runner. However, macOS is **not considered finished yet**. The project must now return to macOS and complete product usability, trust/safety UX, recovery/reporting polish, and physical release verification before any further Windows product work.
 
-M5 Windows work has progressed beyond the original feasibility spike into platform adapters, Smart Scan providers, Recycle Bin integration, and the shared Smart Scan cleanup coordinator. The coordinator derives its execution allow-list from the discovered Windows scan set, pins provider-root identity before review, uses the shared planner/executor, and keeps permanent deletion safety-locked. Windows GPUI mutation wiring remains a separate follow-up slice so policy is not duplicated in the frontend.
+M5 Windows work has already progressed beyond the original feasibility spike into platform adapters, Smart Scan providers, Recycle Bin integration, and the shared Smart Scan cleanup coordinator. Preserve that work as-is, but **pause further Windows implementation now**. In particular, do not continue Windows GPUI review/mutation wiring until the macOS completion gate below is closed.
 
 Permanent delete remains deliberately safety-locked in `cleaner-macos`; GPUI exposes Trash-only cleanup/uninstall execution.
 
 For a code-oriented tour, read [`CODE_WALKTHROUGH.md`](./CODE_WALKTHROUGH.md). For the final M4 release gate, follow [`M4_RELEASE_VERIFICATION.md`](./M4_RELEASE_VERIFICATION.md).
+
+## Priority rule — macOS first
+
+The current engineering priority is:
+
+```text
+Finish macOS product + release quality
+            ↓
+Close macOS completion gate
+            ↓
+Resume Windows M5
+            ↓
+Consider optional Flutter frontend later
+```
+
+Do not start another Windows feature slice merely because the shared Windows core is ready. macOS is the reference product and must reach a stable, trustworthy, releasable state first.
+
+Windows work may resume only after all macOS completion items in this handoff are done or explicitly deferred with a documented reason.
 
 ## Architecture direction
 
@@ -83,7 +101,7 @@ Rules:
 - GPUI application filters, review, execution, cancellation, and reports
 - stale reviewed plans are discarded after execution attempts
 
-## M4 — macOS integration
+## M4 — macOS integration already implemented
 
 ### Full Disk Access
 
@@ -95,9 +113,7 @@ Finder reveal and Trash integration remain macOS platform operations. Trash uses
 
 ### LaunchAgent scheduling
 
-Scheduling is intentionally read-only.
-
-The scheduled command is limited to:
+Scheduling is intentionally read-only. The scheduled command is limited to:
 
 ```text
 dxtr-cleaner scan --category user
@@ -116,21 +132,93 @@ Important durability/safety rules:
 - plist mutation fails closed on unsafe symlink/non-file states
 - bootstrap failure restores the previous plist and reactivates the prior job when appropriate
 
-### GPUI Settings
-
-The Settings page supports load status, Enable Daily Smart Scan, Disable, Repair stale configuration, and explicit Disabled / Enabled / Needs repair / Error / Loading states. Scheduling I/O and `launchctl` work stay off the GPUI event loop.
-
 ### Packaging and release tooling
 
-`scripts/macos/package.sh` builds the signed `.app` and ZIP. The bundle contains both the GPUI executable and the bundled `dxtr-cleaner` CLI. CI includes a behavioral packaging-contract test so removing/signing the wrong binary cannot silently pass.
+`scripts/macos/package.sh` builds the signed `.app` and ZIP. The bundle contains both the GPUI executable and bundled `dxtr-cleaner` CLI.
 
 `scripts/macos/notarize.sh` submits the ZIP with `notarytool`, staples the app, validates the staple, performs Gatekeeper assessment, and rebuilds the final ZIP after stapling.
 
-`scripts/macos/generate_cask.sh` generates `Casks/dxtr-cleaner.rb` only from an explicit version, real SHA-256, and a URL constrained to this repository's GitHub Releases path. It rejects traversal/dot-segment URL tricks and remains compatible with macOS Bash 3.2.
+`scripts/macos/generate_cask.sh` generates `Casks/dxtr-cleaner.rb` only from an explicit version, real SHA-256, and this repository's GitHub Releases URL.
 
-`scripts/macos/verify_release.sh` verifies the app extracted from the exact ZIP being hashed, requires quarantine evidence by default, writes evidence atomically only after success, and can require a prepared expected SHA so a different valid/notarized build cannot satisfy the final release gate.
+`scripts/macos/verify_release.sh` verifies the app extracted from the exact ZIP being hashed, requires quarantine evidence by default, and can require a prepared expected SHA.
 
-### Canonical two-phase release flow
+## macOS completion program — do this now
+
+The macOS application is the current product target. Complete the following in order before returning to Windows.
+
+### MAC-1 — cleanup usability and layout
+
+Make the normal macOS Smart Scan → Review → Clean flow comfortable and obvious in the real GPUI app.
+
+- verify cleanup works end-to-end on a real Mac, not only through core/CLI tests
+- fix remaining layout density, clipping, awkward spacing, scrolling, disabled-state, and action-hierarchy issues
+- ensure scan progress, review, execution, cancellation, empty states, partial results, and error states are understandable
+- verify the Uninstaller flow has the same usability quality bar
+- test at realistic macOS window sizes rather than one development size
+- keep long-running filesystem work off the GPUI event loop
+
+### MAC-2 — cleanup trust UX
+
+Implement the behavior-level ideas selected from the Tidy review without copying GPL implementation code.
+
+1. **Honest disk accounting**
+   - distinguish logical size from allocated/on-disk size where macOS exposes it reliably
+   - distinguish `moved to Trash` from `actually reclaimed`
+   - never claim that Trash-only execution immediately freed the reported bytes
+
+2. **Richer per-item execution outcomes**
+   - expose typed outcomes such as executed, skipped, changed since scan, permission denied, protected, missing, failed, and cancelled
+   - preserve useful partial-success details instead of collapsing them into one aggregate error
+
+3. **User-facing safety tiers**
+   - keep evidence/confidence policy in Rust
+   - present clear semantics such as Safe / Review / Risky
+   - only genuinely safe items default selected
+   - inferred ownership/orphans remain review-only
+
+4. **Permission and scan-coverage health**
+   - show Full Disk Access state and scan coverage
+   - distinguish Full / Partial scan
+   - explain skipped locations
+   - provide Open Settings and Re-check actions
+   - missing permission must never become a misleading confident zero
+
+5. **Smart Care aggregation polish**
+   - orchestrate existing typed categories/providers in one useful surface
+   - preserve independent policy, review state, and execution allow-lists
+   - do not duplicate cleanup rules in GPUI
+
+Suggested first branch: `macos-cleanup-trust-ux`.
+
+### MAC-3 — cleanup history and recovery
+
+Build on Trash-only mutation rather than adding more destructive behavior.
+
+- record cleanup sessions with timestamp, category/source, item outcomes, and byte accounting
+- make previous cleanup activity inspectable
+- support Reveal in Trash where appropriate
+- add trustworthy restore/Put Back behavior only where macOS/platform semantics can be verified
+- never imply recoverability for an operation that cannot actually be restored
+
+Suggested branch: `cleanup-history-and-restore`.
+
+### MAC-4 — Space Lens foundation
+
+After cleanup/recovery UX is stable:
+
+- add frontend-neutral Rust directory-size aggregation/top-offender APIs
+- use allocated size where appropriate and clearly define accounting semantics
+- support cancellation/progress for large trees
+- add GPUI visualization only after the data API is stable
+- keep treemap/visualization concepts out of core domain models
+
+Suggested branch: `space-lens-foundation`.
+
+This is still within the cleaner/uninstaller product scope. Clipboard history, network metering, and AI-usage tracking remain out of scope.
+
+### MAC-5 — physical release verification
+
+Complete the real release gate after product polish is ready.
 
 Phase 1 — prepare on the release Mac:
 
@@ -142,8 +230,6 @@ URL="https://github.com/dexter-cnx/dxtr_cleaner/releases/download/v<release-vers
 make prepare-macos-release
 ```
 
-This performs Developer ID packaging → notarization/stapling → prepublish verification → prepared SHA persistence → cask generation. It intentionally does not count local no-quarantine evidence as the final Gatekeeper gate.
-
 Phase 2 — after publishing and downloading the exact ZIP through a quarantine-applying path:
 
 ```bash
@@ -152,9 +238,60 @@ EXPECTED_SHA256_FILE="/path/to/prepared-expected-sha256" \
 make verify-macos-release
 ```
 
-The downloaded ZIP must match the prepared digest byte-for-byte. A different signed/notarized build must fail.
+Required physical checks:
 
-Real Apple credentials remain external and must never be committed.
+1. real Developer ID packaging succeeds
+2. notarization accepted and staple validated
+3. prepared SHA retained
+4. exact prepared ZIP published
+5. quarantined download matches prepared SHA byte-for-byte
+6. Gatekeeper verification succeeds on that download
+7. first launch from a durable install location succeeds
+8. Smart Scan / Review / Trash cleanup smoke succeeds
+9. Uninstaller review / Trash smoke succeeds
+10. Settings / Full Disk Access state behaves correctly
+11. LaunchAgent enable/status/disable smoke succeeds
+12. Homebrew install/uninstall smoke succeeds with the generated cask
+13. non-secret release evidence is retained
+14. only then check off signed/notarized packaging and Homebrew in `ROADMAP.md`
+
+## macOS completion gate
+
+Do **not** resume Windows feature development until these are true:
+
+- [ ] normal macOS cleanup flow is usable and visually stable
+- [ ] macOS Uninstaller flow is usable and visually stable
+- [ ] honest allocated/logical/Trash accounting is implemented or explicitly documented where unavailable
+- [ ] partial-scan and permission health UX is implemented
+- [ ] richer execution outcomes are visible and understandable
+- [ ] safety-tier presentation is implemented without moving policy into GPUI
+- [ ] cleanup history/recovery decision is implemented and validated
+- [ ] Space Lens foundation is completed or explicitly deferred after review
+- [ ] real signed/notarized release verification passes
+- [ ] quarantined-download Gatekeeper verification passes
+- [ ] Homebrew install/uninstall smoke passes
+- [ ] final macOS smoke test is recorded
+
+When this checklist closes, macOS becomes the stable reference implementation for cross-platform parity.
+
+## Windows status — paused, preserve work
+
+Already completed/progressed Windows work must remain intact:
+
+- GPUI Windows feasibility harness
+- Windows platform adapters
+- Windows Smart Scan providers
+- Recycle Bin integration
+- Windows Smart Scan cleanup coordinator using the shared planner/executor and provider-root allow-listing
+
+Do not delete or redesign this work merely because it is paused.
+
+After the macOS completion gate closes, resume M5 with the next planned slice:
+
+- retain reviewed Windows Smart Scan items in the Windows GPUI spike
+- invoke the shared Windows cleanup coordinator
+- do not duplicate execution policy in Windows GPUI
+- then continue the remaining Windows release/platform work
 
 ## Permanent-delete safety lock
 
@@ -163,28 +300,6 @@ Permanent deletion remains blocked in the macOS backend.
 Reason: path-based `remove_file` / `remove_dir_all` cannot close the ancestor-swap TOCTOU window between validation and mutation.
 
 Do not re-enable permanent delete with another path recheck. A future implementation requires anchored directory-descriptor / no-follow filesystem mutation tying validation and deletion to the same filesystem identity.
-
-## Product trust / cleanup UX backlog
-
-A review of `yunweneric/tidy` highlighted several behavior-level ideas that fit Dxtr Cleaner's safety-first identity. Treat them as product inspiration only; do not copy implementation code. Tidy is GPL-3.0 while Dxtr Cleaner has its own licensing boundary.
-
-Prioritize these after the current Windows cleanup wiring slice and macOS usability stabilization:
-
-1. **Honest disk accounting** — distinguish logical file length from allocated/on-disk size where the platform can provide it. Execution reports must distinguish bytes moved to Trash from bytes actually reclaimed; moving to Trash must never be presented as immediate freed space.
-2. **Richer per-item execution outcomes** — expose typed item results such as executed, skipped, changed since scan, permission denied, protected, missing, failed, and cancelled rather than collapsing failures into a single aggregate state.
-3. **User-facing safety tiers** — retain the existing evidence/confidence policy in core, but map it to clear presentation semantics such as Safe / Review / Risky. Only genuinely safe findings should default selected; inferred ownership/orphans remain review-only.
-4. **Permission and scan-coverage health** — show whether scan coverage is full or partial, why locations were skipped, Full Disk Access state on macOS, a Settings shortcut, and an explicit re-check action. Missing permissions must result in `Partial scan`, never a misleading confident zero.
-5. **Smart Care aggregation** — provide one orchestration surface across existing typed providers/categories while preserving their independent requests, policy, review state, and execution allow-lists. Do not move cleanup rules into the UI.
-6. **Cleanup history / recovery** — record cleanup sessions and make Trash-based operations easier to inspect and recover through reveal/restore flows where the platform supports trustworthy restoration.
-7. **Space Lens foundation** — later add frontend-neutral directory-size aggregation/top-offender APIs in Rust, followed by a treemap or equivalent disk visualization in the frontend. Do not let visualization requirements leak into core models.
-
-Potential sequencing:
-
-- `macos-cleanup-trust-ux`: allocated/logical size semantics, honest Trash accounting, partial-scan/permission health, safety-tier presentation, richer execution results
-- `cleanup-history-and-restore`: cleanup-session history plus reveal/restore capability
-- `space-lens-foundation`: Rust directory aggregation API before visual frontend work
-
-Explicitly out of scope for now: clipboard history, network metering, and AI-usage tracking. Those are useful general Mac-utility features but would broaden the product beyond its cleaner/uninstaller focus.
 
 ## Quality gates
 
@@ -200,7 +315,7 @@ CI equivalent:
 make ci
 ```
 
-The repository also has a development-branch auto-format workflow. Because GitHub's `GITHUB_TOKEN` does not recursively trigger arbitrary follow-on workflows from bot-pushed formatting commits, always ensure a real CI run exists for the final PR head before merging code changes. A documentation-only handoff update made after an already-green code head may be merged without waiting for another CI cycle once the final diff is confirmed to contain no code, workflow, build, or configuration changes beyond that already-green head.
+Always ensure a real CI run exists for the final PR head before merging code changes. A documentation-only handoff update made after an already-green code head may be merged without waiting for another CI cycle once the final diff is confirmed to contain no code, workflow, build, or configuration changes.
 
 ## GPUI dependency
 
@@ -214,18 +329,8 @@ Upgrade only in a dedicated dependency PR.
 
 ## What remains now
 
-M4 code implementation should not expand further unless physical release verification exposes a real defect.
+**Next work is macOS, not Windows.**
 
-The only remaining M4 gate is:
+Start with `macos-cleanup-trust-ux` and the remaining real macOS cleanup/layout issues. Continue through recovery/history and the physical release gate until the macOS completion checklist is closed. Only then return to the paused Windows GPUI mutation slice.
 
-1. run `make prepare-macos-release` with the real Developer ID Application identity and notary profile
-2. retain accepted notarization/staple/prepublish evidence and the prepared SHA
-3. publish that exact ZIP to the release URL used by the cask
-4. download it through a quarantining path
-5. run `make verify-macos-release` against the prepared expected SHA
-6. perform first-launch / Settings / LaunchAgent smoke checks from a durable install location
-7. run Homebrew install/uninstall smoke tests using the generated cask
-8. retain non-secret evidence
-9. only then check off signed/notarized packaging and Homebrew in `ROADMAP.md`
-
-For M5, the next engineering slice after the Windows Smart Scan cleanup coordinator is to retain reviewed Windows Smart Scan items in the Windows GPUI spike and invoke the shared coordinator without duplicating execution policy in UI code. A future Flutter desktop frontend remains an optional path after the Rust application boundary is stable enough to support it without policy duplication.
+A future Flutter desktop frontend remains optional and should not interrupt either the macOS completion program or the later Windows continuation.
