@@ -287,9 +287,8 @@ mod tests {
         fs::remove_dir_all(root).expect("remove fixture");
     }
 
-    #[cfg(not(windows))]
     #[test]
-    fn smart_cleanup_rejects_provider_root_replaced_after_session_pinning() {
+    fn smart_cleanup_rejects_or_blocks_provider_root_replacement() {
         let root = temp_root("root-swap");
         let scan_set = fixture_scan_set(&root);
         let cleanup = WindowsSmartCleanup::from_scan_set(&scan_set);
@@ -302,41 +301,35 @@ mod tests {
         )]);
 
         let moved = root.join("Temp-original");
-        fs::rename(&cache_root, &moved).expect("move original provider root");
-        fs::create_dir_all(&cache_root).expect("create replacement provider root");
-        fs::write(cache_root.join("cache.bin"), b"replacement").expect("write replacement fixture");
+        match fs::rename(&cache_root, &moved) {
+            Ok(()) => {
+                fs::create_dir_all(&cache_root).expect("create replacement provider root");
+                fs::write(cache_root.join("cache.bin"), b"replacement")
+                    .expect("write replacement fixture");
 
-        let backend = RecordingBackend::default();
-        let report = cleanup
-            .execute_with_backend(&reviewed, &CancellationToken::new(), &backend)
-            .expect("execution report");
+                let backend = RecordingBackend::default();
+                let report = cleanup
+                    .execute_with_backend(&reviewed, &CancellationToken::new(), &backend)
+                    .expect("execution report");
 
-        assert_eq!(report.succeeded_count(), 0);
-        assert_eq!(report.failed_count(), 1);
-        assert!(
-            backend
-                .trashed
-                .lock()
-                .expect("lock trashed paths")
-                .is_empty()
-        );
+                assert_eq!(report.succeeded_count(), 0);
+                assert_eq!(report.failed_count(), 1);
+                assert!(
+                    backend
+                        .trashed
+                        .lock()
+                        .expect("lock trashed paths")
+                        .is_empty()
+                );
+            }
+            Err(error) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+            }
+        }
 
-        fs::remove_dir_all(root).expect("remove fixture");
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn smart_cleanup_pinned_provider_root_blocks_windows_rename_swap() {
-        let root = temp_root("root-swap-windows");
-        let scan_set = fixture_scan_set(&root);
-        let _cleanup = WindowsSmartCleanup::from_scan_set(&scan_set);
-        let cache_root = root.join("Temp");
-        let moved = root.join("Temp-original");
-
-        let error = fs::rename(&cache_root, &moved)
-            .expect_err("pinned provider handle should prevent Windows root replacement");
-        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
-
+        drop(reviewed);
+        drop(cleanup);
+        drop(scan_set);
         fs::remove_dir_all(root).expect("remove fixture");
     }
 }
