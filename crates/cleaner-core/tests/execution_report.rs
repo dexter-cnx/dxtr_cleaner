@@ -22,10 +22,7 @@ fn ordinary_backend_failure_is_not_classified_as_skipped() {
     assert_eq!(report.skipped_count(), 0);
     assert_eq!(report.failed_count(), 1);
     assert_eq!(report.moved_bytes(), 0);
-    assert_eq!(
-        report.outcome_count(ExecutionOutcome::PermissionDenied),
-        1
-    );
+    assert_eq!(report.outcome_count(ExecutionOutcome::PermissionDenied), 1);
     assert_eq!(
         report.records[0].outcome(),
         ExecutionOutcome::PermissionDenied
