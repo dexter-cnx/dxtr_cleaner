@@ -4,6 +4,7 @@ mod dev_cache_scan;
 mod explorer_cache_scan;
 mod local_app_data_scan;
 mod paths;
+mod scan_set;
 mod temp_scan;
 mod wer_scan;
 
@@ -17,6 +18,7 @@ pub use dev_cache_scan::WindowsDevCacheScan;
 pub use explorer_cache_scan::WindowsExplorerCacheScan;
 pub use local_app_data_scan::WindowsLocalAppDataCacheScan;
 pub use paths::WindowsPaths;
+pub use scan_set::WindowsScanSet;
 pub use temp_scan::WindowsTempScan;
 pub use wer_scan::WindowsWerCacheScan;
 
