@@ -10,7 +10,9 @@ use cleaner_core::{
     CancellationToken, CleanupCategory, FileSystemScanner, ScanEvent, ScanItem, ScanRequest,
     Scanner,
 };
-use cleaner_windows::{WindowsDisposableCleanup, WindowsPaths, WindowsScanSet};
+use cleaner_windows::{
+    WindowsDisposableCleanup, WindowsDisposableCleanupRoot, WindowsPaths, WindowsScanSet,
+};
 use gpui::{
     App, Bounds, Context, Render, Window, WindowBounds, WindowOptions, div, prelude::*, px, rgb,
     size,
@@ -39,7 +41,7 @@ impl ScanDelta {
 
 enum ScanMessage {
     Delta(ScanDelta),
-    Complete,
+    Complete(Option<WindowsDisposableCleanupRoot>),
     Failed(String),
 }
 
@@ -61,6 +63,7 @@ struct WindowsSpike {
     bytes: u64,
     permission_denied: usize,
     disposable_items: Vec<ScanItem>,
+    disposable_root: Option<WindowsDisposableCleanupRoot>,
     cleanup_result: Option<String>,
     error: Option<String>,
 }
@@ -75,9 +78,15 @@ impl WindowsSpike {
             bytes: 0,
             permission_denied: 0,
             disposable_items: Vec::new(),
+            disposable_root: None,
             cleanup_result: None,
             error: None,
         }
+    }
+
+    fn invalidate_disposable_review(&mut self) {
+        self.disposable_items.clear();
+        self.disposable_root = None;
     }
 
     fn start_scan(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -89,7 +98,7 @@ impl WindowsSpike {
         self.items = 0;
         self.bytes = 0;
         self.permission_denied = 0;
-        self.disposable_items.clear();
+        self.invalidate_disposable_review();
         self.cleanup_result = None;
         self.error = None;
 
@@ -97,6 +106,19 @@ impl WindowsSpike {
         let disposable_mode = root.is_some();
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
+            let disposable_root = match root.as_ref() {
+                Some(root) => match WindowsDisposableCleanup::pin_root(root.clone()) {
+                    Ok(root) => Some(root),
+                    Err(error) => {
+                        let _ = tx.send(ScanMessage::Failed(format!(
+                            "failed to pin disposable scan root: {error}"
+                        )));
+                        return;
+                    }
+                },
+                None => None,
+            };
+
             let requests = match root {
                 Some(root) => vec![ScanRequest {
                     category: CleanupCategory::UserCache,
@@ -164,7 +186,7 @@ impl WindowsSpike {
             if !pending.is_empty() {
                 let _ = tx.send(ScanMessage::Delta(pending));
             }
-            let _ = tx.send(ScanMessage::Complete);
+            let _ = tx.send(ScanMessage::Complete(disposable_root));
         });
 
         let entity = cx.entity();
@@ -189,9 +211,10 @@ impl WindowsSpike {
                                     cx.notify();
                                 });
                             }
-                            Ok(ScanMessage::Complete) => {
+                            Ok(ScanMessage::Complete(disposable_root)) => {
                                 entity.update(cx, |this, cx| {
                                     this.scanning = false;
+                                    this.disposable_root = disposable_root;
                                     cx.notify();
                                 });
                                 terminal = true;
@@ -200,6 +223,7 @@ impl WindowsSpike {
                             Ok(ScanMessage::Failed(error)) => {
                                 entity.update(cx, |this, cx| {
                                     this.scanning = false;
+                                    this.invalidate_disposable_review();
                                     this.error = Some(error);
                                     cx.notify();
                                 });
@@ -210,6 +234,8 @@ impl WindowsSpike {
                             Err(TryRecvError::Disconnected) => {
                                 entity.update(cx, |this, cx| {
                                     this.scanning = false;
+                                    this.invalidate_disposable_review();
+                                    this.error = Some("scan worker disconnected".into());
                                     cx.notify();
                                 });
                                 terminal = true;
@@ -231,7 +257,7 @@ impl WindowsSpike {
         if self.scanning || self.cleaning || self.disposable_items.is_empty() {
             return;
         }
-        let Some(root) = self.root.clone() else {
+        let Some(root) = self.disposable_root.take() else {
             return;
         };
 
@@ -244,7 +270,7 @@ impl WindowsSpike {
         thread::spawn(move || {
             let plan = WindowsDisposableCleanup::build_plan(items);
             let cancellation = CancellationToken::new();
-            match WindowsDisposableCleanup::execute(&plan, root, &cancellation) {
+            match WindowsDisposableCleanup::execute(&plan, &root, &cancellation) {
                 Ok(report) => {
                     let _ = tx.send(CleanupMessage::Complete {
                         succeeded: report.succeeded_count(),
@@ -275,7 +301,7 @@ impl WindowsSpike {
                         }) => {
                             entity.update(cx, |this, cx| {
                                 this.cleaning = false;
-                                this.disposable_items.clear();
+                                this.invalidate_disposable_review();
                                 this.cleanup_result = Some(format!(
                                     "Cleanup complete · {succeeded} moved · {skipped} skipped · {failed} failed · {moved_bytes} bytes"
                                 ));
@@ -286,6 +312,7 @@ impl WindowsSpike {
                         Ok(CleanupMessage::Failed(error)) => {
                             entity.update(cx, |this, cx| {
                                 this.cleaning = false;
+                                this.invalidate_disposable_review();
                                 this.error = Some(error);
                                 cx.notify();
                             });
@@ -295,6 +322,7 @@ impl WindowsSpike {
                         Err(TryRecvError::Disconnected) => {
                             entity.update(cx, |this, cx| {
                                 this.cleaning = false;
+                                this.invalidate_disposable_review();
                                 this.error = Some("cleanup worker disconnected".into());
                                 cx.notify();
                             });
@@ -329,7 +357,7 @@ impl Render for WindowsSpike {
         } else {
             "Run Smart Scan"
         };
-        let can_cleanup = self.root.is_some()
+        let can_cleanup = self.disposable_root.is_some()
             && !self.scanning
             && !self.cleaning
             && !self.disposable_items.is_empty();
@@ -388,7 +416,7 @@ impl Render for WindowsSpike {
                 )
             })
             .child(div().text_color(rgb(0xa9afb8)).child(if self.root.is_some() {
-                "Disposable smoke mode: scan the supplied directory, then move reviewed scan results through the shared Trash-only cleanup boundary. Permanent delete remains locked."
+                "Disposable smoke mode: scan the supplied directory, then move reviewed scan results through the shared Trash-only cleanup boundary. The scan root identity is pinned before traversal and permanent delete remains locked."
             } else {
                 "Read-only Windows Smart Scan: provider results are aggregated and no cleanup action is exposed for discovered provider roots yet."
             }))
