@@ -7,7 +7,7 @@ use crate::{
     WindowsLocalAppDataCacheScan, WindowsPaths, WindowsTempScan, WindowsWerCacheScan,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct WindowsScanSet {
     requests: Vec<ScanRequest>,
 }
