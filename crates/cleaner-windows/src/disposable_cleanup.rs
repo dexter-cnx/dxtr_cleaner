@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use cleaner_core::{
     AllowedRoot, CancellationToken, CategoryActionPolicy, CleanupBackend, CleanupCategory,
@@ -74,6 +74,7 @@ impl WindowsDisposableCleanup {
 mod tests {
     use std::{
         fs,
+        path::Path,
         sync::Mutex,
         time::{SystemTime, UNIX_EPOCH},
     };
