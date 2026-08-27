@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "project": {
+    "title": "dxtr_cleaner",
+    "tagline": "A Rust/GPUI desktop cleanup utility focused on macOS usability first.",
+    "status": "active",
+    "version": null
+  },
+  "summary": {
+    "short": "dxtr_cleaner is a Rust desktop cleanup application built with GPUI, currently focused on making macOS cleanup reliable and easy to use before expanding platform scope.",
+    "long": "The project prioritizes macOS cleanup correctness, usability, layout quality, and maintainable Rust core architecture, with Windows support planned after the Mac experience is stabilized."
+  },
+  "highlights": [
+    "Rust desktop core",
+    "GPUI interface",
+    "macOS cleanup and usability focus",
+    "Windows support planned later"
+  ],
+  "tech": ["Rust", "GPUI", "macOS"],
+  "links": {
+    "repository": "https://github.com/dexter-cnx/dxtr_cleaner",
+    "homepage": null,
+    "package": null,
+    "docs": null,
+    "demo": null
+  },
+  "updatedAt": "2026-08-27T00:00:00Z"
+}
