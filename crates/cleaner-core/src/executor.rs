@@ -23,7 +23,7 @@ pub enum ExecutionOutcome {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TrashByteAccounting {
-    pub moved_logical_bytes: u64,
+    pub moved_scan_estimate_bytes: u64,
     pub reclaimed_bytes: Option<u64>,
 }
 
@@ -41,6 +41,9 @@ impl ExecutionRecord {
         match &self.result {
             Ok(()) => ExecutionOutcome::Executed,
             Err(ExecutionFailure::Safety(SafetyError::MissingPath)) => ExecutionOutcome::Missing,
+            Err(ExecutionFailure::Safety(SafetyError::PermissionDenied)) => {
+                ExecutionOutcome::PermissionDenied
+            }
             Err(ExecutionFailure::Safety(SafetyError::PathRevalidationFailed)) => {
                 ExecutionOutcome::ChangedSinceScan
             }
@@ -106,7 +109,7 @@ impl ExecutionReport {
 
     pub fn trash_accounting(&self) -> TrashByteAccounting {
         TrashByteAccounting {
-            moved_logical_bytes: self.moved_bytes(),
+            moved_scan_estimate_bytes: self.moved_bytes(),
             reclaimed_bytes: None,
         }
     }
@@ -131,6 +134,7 @@ fn is_missing_backend_message(message: &str) -> bool {
     normalized.contains("path no longer exists")
         || normalized.contains("path disappeared before finder")
         || normalized.contains("no such file")
+        || normalized.contains("recycle bin path does not exist")
 }
 
 fn is_permission_backend_message(message: &str) -> bool {
@@ -138,6 +142,8 @@ fn is_permission_backend_message(message: &str) -> bool {
     normalized.contains("permission denied")
         || normalized.contains("operation not permitted")
         || normalized.contains("not permitted")
+        || normalized.contains("don’t have permission")
+        || normalized.contains("don't have permission")
 }
 
 pub trait TrashBackend {
