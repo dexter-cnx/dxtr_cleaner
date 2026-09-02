@@ -112,8 +112,8 @@ impl Planner {
             return Err(SafetyError::SymlinkSelected);
         }
 
-        let canonical_path = fs::canonicalize(&item.path)
-            .map_err(|error| classify_revalidation_error(&error))?;
+        let canonical_path =
+            fs::canonicalize(&item.path).map_err(|error| classify_revalidation_error(&error))?;
         if is_protected_broad_root(&canonical_path) {
             return Err(SafetyError::ProtectedRoot);
         }
