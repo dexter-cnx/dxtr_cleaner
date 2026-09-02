@@ -49,8 +49,17 @@ pub enum SafetyError {
     SymlinkSelected,
     ProtectedRoot,
     MissingPath,
+    PermissionDenied,
     PathRevalidationFailed,
     OutsideAllowedRoots,
+}
+
+fn classify_revalidation_error(error: &std::io::Error) -> SafetyError {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => SafetyError::MissingPath,
+        std::io::ErrorKind::PermissionDenied => SafetyError::PermissionDenied,
+        _ => SafetyError::PathRevalidationFailed,
+    }
 }
 
 pub struct Planner;
@@ -97,19 +106,14 @@ impl Planner {
             return Err(SafetyError::ProtectedRoot);
         }
 
-        let metadata = fs::symlink_metadata(&item.path).map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                SafetyError::MissingPath
-            } else {
-                SafetyError::PathRevalidationFailed
-            }
-        })?;
+        let metadata = fs::symlink_metadata(&item.path)
+            .map_err(|error| classify_revalidation_error(&error))?;
         if metadata.file_type().is_symlink() {
             return Err(SafetyError::SymlinkSelected);
         }
 
         let canonical_path =
-            fs::canonicalize(&item.path).map_err(|_| SafetyError::PathRevalidationFailed)?;
+            fs::canonicalize(&item.path).map_err(|error| classify_revalidation_error(&error))?;
         if is_protected_broad_root(&canonical_path) {
             return Err(SafetyError::ProtectedRoot);
         }
@@ -225,6 +229,15 @@ mod tests {
             true,
         )]);
         assert!(!plan.items[0].selected);
+    }
+
+    #[test]
+    fn classifies_permission_denied_revalidation_separately() {
+        let error = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+        assert_eq!(
+            classify_revalidation_error(&error),
+            SafetyError::PermissionDenied
+        );
     }
 
     #[test]
